@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>features</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            line-height: 1.6;
+            color: #333;
+        }
+        h1, h2, h3, h4, h5, h6 {
+            color: #2c3e50;
+            margin-top: 1.5em;
+        }
+        pre {
+            background-color: #f4f4f4;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        code {
+            background-color: #f4f4f4;
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+        blockquote {
+            border-left: 4px solid #3498db;
+            margin: 0;
+            padding-left: 20px;
+            color: #666;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1em 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .nav {
+            margin-bottom: 2em;
+            padding-bottom: 1em;
+            border-bottom: 1px solid #eee;
+        }
+        .nav a {
+            margin-right: 1em;
+            color: #3498db;
+            text-decoration: none;
+        }
+        .nav a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <a href="index.html">Home</a>
+        <a href="contents.html">Contents</a>
+        <a href="/wiki">Back to Wiki</a>
+    </div>
+    <h1 id="features">Features</h1>
+<p>This markdown wiki system provides several useful features:</p>
+<h2 id="core-features">Core Features</h2>
+<h3 id="markdown-processing">Markdown Processing</h3>
+<ul>
+<li>Full markdown support using Markdig</li>
+<li>Advanced extensions enabled</li>
+<li>Code syntax highlighting</li>
+<li>Tables, lists, and formatting</li>
+</ul>
+<h3 id="link-processing">Link Processing</h3>
+<ul>
+<li>Automatic conversion of <code>.md</code> links to <code>.html</code></li>
+<li>Internal navigation between pages</li>
+<li>External links work as expected</li>
+</ul>
+<h3 id="web-interface">Web Interface</h3>
+<ul>
+<li>Clean, responsive design</li>
+<li>Easy refresh functionality</li>
+<li>File listing and management</li>
+<li>Bootstrap-based styling</li>
+</ul>
+<h2 id="file-management">File Management</h2>
+<h3 id="input">Input</h3>
+<ul>
+<li>Markdown files in the <code>markdown</code> folder</li>
+<li>Supports subdirectories</li>
+<li>Standard <code>.md</code> file extension</li>
+</ul>
+<h3 id="output">Output</h3>
+<ul>
+<li>HTML files generated in <code>wwwroot/wiki</code></li>
+<li>Maintains folder structure</li>
+<li>Includes navigation and styling</li>
+</ul>
+<h2 id="navigation-features">Navigation Features</h2>
+<h3 id="default-pages">Default Pages</h3>
+<p>The system automatically looks for and redirects to:</p>
+<ol>
+<li><code>index.html</code> (if it exists)</li>
+<li><code>contents.html</code> (if it exists)</li>
+<li>Falls back to the wiki file listing</li>
+</ol>
+<h3 id="page-structure">Page Structure</h3>
+<p>Each generated page includes:</p>
+<ul>
+<li>Proper HTML document structure</li>
+<li>CSS styling for readability</li>
+<li>Navigation links</li>
+<li>Responsive design</li>
+</ul>
+<h2 id="technical-details">Technical Details</h2>
+<h3 id="technologies-used">Technologies Used</h3>
+<ul>
+<li>ASP.NET Core 8 with Razor Pages</li>
+<li>Markdig for markdown processing</li>
+<li>Bootstrap for styling</li>
+<li>File system monitoring</li>
+</ul>
+<h3 id="configuration">Configuration</h3>
+<ul>
+<li>Configurable markdown source folder</li>
+<li>Configurable output folder</li>
+<li>Web-accessible generated content</li>
+</ul>
+<h2 id="getting-back">Getting Back</h2>
+<ul>
+<li><a href="getting-started.html">Getting Started</a></li>
+<li><a href="contents.html">Contents</a></li>
+<li><a href="index.html">Index</a></li>
+</ul>
+
+</body>
+</html>

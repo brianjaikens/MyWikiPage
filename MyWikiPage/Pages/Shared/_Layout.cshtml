@@ -1,0 +1,192 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] - MyWikiPage</title>
+    <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/MyWikiPage.styles.css" asp-append-version="true" />
+    <!-- Bootstrap Icons for refresh button -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+</head>
+<body>
+    <header>
+        <nav class="navbar navbar-expand-sm navbar-toggleable-sm navbar-light bg-white border-bottom box-shadow mb-3">
+            <div class="container">
+                <a class="navbar-brand" asp-area="" asp-page="/Index">MyWikiPage</a>
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target=".navbar-collapse" aria-controls="navbarSupportedContent"
+                        aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+                <div class="navbar-collapse collapse d-sm-inline-flex justify-content-between">
+                    <ul class="navbar-nav flex-grow-1">
+                        <li class="nav-item">
+                            <a class="nav-link text-dark" asp-area="" asp-page="/Index">Home</a>
+                        </li>
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle text-dark" href="#" id="infoDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                Info
+                            </a>
+                            <ul class="dropdown-menu" aria-labelledby="infoDropdown">
+                                <li><a class="dropdown-item" asp-area="" asp-page="/Wiki">Wiki</a></li>
+                            </ul>
+                        </li>
+                    </ul>
+                    <div class="d-flex">
+                        <button type="button" class="btn btn-outline-secondary btn-sm me-2" title="Refresh Wiki" id="refreshButton">
+                            <i class="bi bi-arrow-clockwise"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </nav>
+    </header>
+    
+    <!-- Toast Container -->
+    <div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1055;">
+        <div id="refreshToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="toast-header">
+                <i class="bi bi-arrow-clockwise me-2 text-primary"></i>
+                <strong class="me-auto">Wiki Refresh</strong>
+                <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+            <div class="toast-body" id="toastMessage">
+                <!-- Message will be inserted here -->
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <main role="main" class="pb-3">
+            @RenderBody()
+        </main>
+    </div>
+
+    <footer class="border-top footer text-muted">
+        <div class="container">
+            &copy; 2025 - MyWikiPage
+        </div>
+    </footer>
+
+    <script src="~/lib/jquery/dist/jquery.min.js"></script>
+    <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="~/js/site.js" asp-append-version="true"></script>
+
+    <script>
+        // Handle refresh button functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            const refreshButton = document.getElementById('refreshButton');
+            const refreshToast = document.getElementById('refreshToast');
+            const toastMessage = document.getElementById('toastMessage');
+            
+            if (refreshButton) {
+                refreshButton.addEventListener('click', async function(e) {
+                    // Prevent any default behavior completely
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    
+                    const button = e.target.closest('button');
+                    const icon = button.querySelector('i');
+                    
+                    // Add spinning animation and disable button temporarily
+                    if (icon) {
+                        icon.classList.add('spinning');
+                    }
+                    button.disabled = true;
+                    
+                    try {
+                        console.log('Making request to /Wiki?handler=RefreshAjax');
+                        
+                        // Make simplified AJAX request (no anti-forgery token needed)
+                        const response = await fetch('/Wiki?handler=RefreshAjax', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                                'X-Requested-With': 'XMLHttpRequest'
+                            }
+                        });
+                        
+                        console.log('Response status:', response.status);
+                        console.log('Response ok:', response.ok);
+                        
+                        if (!response.ok) {
+                            const errorText = await response.text();
+                            console.error('Response error:', errorText);
+                            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                        }
+                        
+                        const contentType = response.headers.get('content-type');
+                        console.log('Content-Type:', contentType);
+                        
+                        if (!contentType || !contentType.includes('application/json')) {
+                            const responseText = await response.text();
+                            console.error('Non-JSON response:', responseText);
+                            throw new Error(`Expected JSON but got ${contentType}. Response: ${responseText.substring(0, 200)}`);
+                        }
+                        
+                        const result = await response.json();
+                        console.log('Success result:', result);
+                        
+                        // Update toast message and style based on result
+                        toastMessage.textContent = result.message;
+                        const toastHeader = refreshToast.querySelector('.toast-header');
+                        const toastIcon = toastHeader.querySelector('i');
+                        
+                        // Reset toast header classes
+                        toastHeader.classList.remove('bg-success', 'bg-danger', 'text-white');
+                        
+                        if (result.success) {
+                            toastHeader.classList.add('bg-success', 'text-white');
+                            toastIcon.className = 'bi bi-check-circle me-2 text-white';
+                        } else {
+                            toastHeader.classList.add('bg-danger', 'text-white');
+                            toastIcon.className = 'bi bi-exclamation-triangle me-2 text-white';
+                        }
+                        
+                        // Show toast for 3 seconds
+                        const toast = new bootstrap.Toast(refreshToast, {
+                            delay: 3000,
+                            autohide: true
+                        });
+                        toast.show();
+                        
+                    } catch (error) {
+                        console.error('Error during refresh:', error);
+                        
+                        // Show error toast with simplified message
+                        toastMessage.textContent = 'Failed to refresh wiki. Please try again.';
+                        const toastHeader = refreshToast.querySelector('.toast-header');
+                        const toastIcon = toastHeader.querySelector('i');
+                        
+                        // Reset and set error styles
+                        toastHeader.classList.remove('bg-success', 'bg-danger', 'text-white');
+                        toastHeader.classList.add('bg-danger', 'text-white');
+                        toastIcon.className = 'bi bi-exclamation-triangle me-2 text-white';
+                        
+                        const toast = new bootstrap.Toast(refreshToast, {
+                            delay: 5000, // Show error messages longer
+                            autohide: true
+                        });
+                        toast.show();
+                    } finally {
+                        // Re-enable button and stop spinning after a short delay
+                        setTimeout(() => {
+                            button.disabled = false;
+                            if (icon) {
+                                icon.classList.remove('spinning');
+                            }
+                        }, 500); // Small delay to show the spinning animation briefly
+                    }
+                    
+                    // Explicitly return false to prevent any form submission
+                    return false;
+                });
+            }
+        });
+    </script>
+
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

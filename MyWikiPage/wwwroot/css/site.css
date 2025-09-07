@@ -1,0 +1,82 @@
+html {
+  font-size: 14px;
+}
+
+@media (min-width: 768px) {
+  html {
+    font-size: 16px;
+  }
+}
+
+.btn:focus, .btn:active:focus, .btn-link.nav-link:focus, .form-control:focus, .form-check-input:focus {
+  box-shadow: 0 0 0 0.1rem white, 0 0 0 0.25rem #258cfb;
+}
+
+html {
+  position: relative;
+  min-height: 100%;
+}
+
+body {
+  margin-bottom: 60px;
+}
+
+/* Refresh button styling */
+#refreshButton {
+  transition: all 0.3s ease;
+}
+
+#refreshButton:hover:not(:disabled) {
+  transform: scale(1.05);
+}
+
+#refreshButton:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+/* Spinning animation for refresh icon */
+.bi-arrow-clockwise.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Dropdown menu styling */
+.dropdown-menu {
+  border: 1px solid #dee2e6;
+  box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+}
+
+.dropdown-item:hover {
+  background-color: #f8f9fa;
+}
+
+/* Toast styling */
+.toast-container {
+  z-index: 1055;
+}
+
+.toast {
+  border: 1px solid rgba(0, 0, 0, 0.175);
+  box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+}
+
+.toast-header.bg-success {
+  background-color: #198754 !important;
+}
+
+.toast-header.bg-danger {
+  background-color: #dc3545 !important;
+}
+
+.toast-header.text-white {
+  color: white !important;
+}
+
+.toast-header.text-white .btn-close {
+  filter: invert(1) grayscale(100%) brightness(200%);
+}

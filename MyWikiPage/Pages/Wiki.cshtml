@@ -1,0 +1,135 @@
+@page
+@model WikiModel
+@{
+    ViewData["Title"] = "Wiki";
+}
+
+<div class="container">
+    <div class="row">
+        <div class="col-md-12">
+            <h1>Markdown Wiki</h1>
+            
+            @if (!string.IsNullOrEmpty(Model.Message))
+            {
+                <div class="alert alert-info alert-dismissible fade show" role="alert">
+                    @Model.Message
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            }
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5>Wiki Configuration</h5>
+                </div>
+                <div class="card-body">
+                    <p><strong>Markdown Folder:</strong> <code>@Model.MarkdownFolderPath</code></p>
+                    <p><strong>Output Folder:</strong> <code>@Model.OutputFolderPath</code></p>
+                    
+                    <small class="text-muted">
+                        Use the refresh button <i class="bi bi-arrow-clockwise"></i> in the navigation bar to scan the markdown folder and generate HTML pages.
+                    </small>
+                </div>
+            </div>
+
+            @if (Model.HasGeneratedContent)
+            {
+                <div class="card mb-4">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5>Quick Access</h5>
+                        @if (!string.IsNullOrEmpty(Model.DefaultPageUrl))
+                        {
+                            <a href="@Model.DefaultPageUrl" class="btn btn-success btn-sm" target="_blank">
+                                <i class="bi bi-arrow-up-right-square"></i> Open Default Page
+                            </a>
+                        }
+                    </div>
+                    <div class="card-body">
+                        @if (!string.IsNullOrEmpty(Model.DefaultPageUrl))
+                        {
+                            <p>Default page detected: <a href="@Model.DefaultPageUrl" target="_blank">@Model.DefaultPageUrl</a></p>
+                        }
+                        else
+                        {
+                            <p>No default page (index.html or contents.html) found.</p>
+                        }
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h5>Generated Pages (@Model.GeneratedFiles.Count)</h5>
+                    </div>
+                    <div class="card-body">
+                        @if (Model.GeneratedFiles.Any())
+                        {
+                            <div class="list-group">
+                                @foreach (var file in Model.GeneratedFiles)
+                                {
+                                    <a href="@file" class="list-group-item list-group-item-action" target="_blank">
+                                        <i class="bi bi-file-earmark-text"></i> @file
+                                    </a>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <p class="text-muted">No generated files found. Use the refresh button in the navigation to generate pages from markdown files.</p>
+                        }
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="alert alert-warning">
+                    <h6>No Generated Content</h6>
+                    <p>No wiki pages have been generated yet. Make sure you have:</p>
+                    <ul>
+                        <li>Markdown files (.md) in the folder: <code>@Model.MarkdownFolderPath</code></li>
+                        <li>Use the refresh button <i class="bi bi-arrow-clockwise"></i> in the navigation bar to generate HTML pages</li>
+                    </ul>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<style>
+    .card {
+        border: 1px solid #dee2e6;
+        border-radius: 0.375rem;
+    }
+    
+    .card-header {
+        background-color: #f8f9fa;
+        border-bottom: 1px solid #dee2e6;
+        padding: 0.75rem 1.25rem;
+    }
+    
+    .list-group-item {
+        border: 1px solid #dee2e6;
+        padding: 0.75rem 1.25rem;
+    }
+    
+    .list-group-item:hover {
+        background-color: #f8f9fa;
+    }
+    
+    .alert {
+        padding: 0.75rem 1.25rem;
+        margin-bottom: 1rem;
+        border: 1px solid transparent;
+        border-radius: 0.375rem;
+    }
+    
+    .alert-info {
+        color: #0c5460;
+        background-color: #d1ecf1;
+        border-color: #bee5eb;
+    }
+    
+    .alert-warning {
+        color: #856404;
+        background-color: #fff3cd;
+        border-color: #ffecb5;
+    }
+</style>
