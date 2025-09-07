@@ -158,65 +158,10 @@ namespace MyWikiPage.Services
     <meta charset=""UTF-8"">
     <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
     <title>{title}</title>
-    <style>
-        body {{
-            font-family: Arial, sans-serif;
-            max-width: 800px;
-            margin: 40px auto;
-            padding: 20px;
-            line-height: 1.6;
-            color: #333;
-        }}
-        h1, h2, h3, h4, h5, h6 {{
-            color: #2c3e50;
-            margin-top: 1.5em;
-        }}
-        pre {{
-            background-color: #f4f4f4;
-            padding: 10px;
-            border-radius: 5px;
-            overflow-x: auto;
-        }}
-        code {{
-            background-color: #f4f4f4;
-            padding: 2px 4px;
-            border-radius: 3px;
-        }}
-        blockquote {{
-            border-left: 4px solid #3498db;
-            margin: 0;
-            padding-left: 20px;
-            color: #666;
-        }}
-        table {{
-            border-collapse: collapse;
-            width: 100%;
-            margin: 1em 0;
-        }}
-        th, td {{
-            border: 1px solid #ddd;
-            padding: 8px;
-            text-align: left;
-        }}
-        th {{
-            background-color: #f2f2f2;
-        }}
-        .nav {{
-            margin-bottom: 2em;
-            padding-bottom: 1em;
-            border-bottom: 1px solid #eee;
-        }}
-        .nav a {{
-            margin-right: 1em;
-            color: #3498db;
-            text-decoration: none;
-        }}
-        .nav a:hover {{
-            text-decoration: underline;
-        }}
-    </style>
+    <link rel=""stylesheet"" href=""/css/site.css"">
+    <link rel=""stylesheet"" href=""https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css"">
 </head>
-<body>
+<body class=""generated-wiki-page"">
     <div class=""nav"">
         <a href=""index.html"">Home</a>
         <a href=""contents.html"">Contents</a>
