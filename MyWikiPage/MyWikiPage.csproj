@@ -5,6 +5,22 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <WarningsAsErrors />
+    <WarningsNotAsErrors />
+    <!-- Additional warning configurations for stricter code quality -->
+    <AnalysisLevel>latest</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <!-- Enable specific analyzers -->
+    <RunAnalyzersDuringBuild>true</RunAnalyzersDuringBuild>
+    <!-- Code analysis settings -->
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisMode>AllEnabledByDefault</AnalysisMode>
+    <!-- Documentation warnings -->
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- Treat specific warnings as errors -->
+    <WarningsAsErrors>CS8600;CS8601;CS8602;CS8603;CS8604;CS8618;CS8625</WarningsAsErrors>
+    <!-- Disable specific analyzer rules that are not appropriate for web applications -->
+    <NoWarn>CA1848;CA1515;CA1056</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

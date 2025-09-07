@@ -1,22 +1,175 @@
 ﻿@page
 @model IndexModel
 @{
-    ViewData["Title"] = "Home page";
+    ViewData["Title"] = Model.PageTitle;
 }
 
-<div class="text-center">
-    <h1 class="display-4">Welcome to MyWikiPage</h1>
-    <p>A simple markdown-to-HTML wiki generator built with ASP.NET Core Razor Pages.</p>
+<div class="container">
+    @if (Model.HasGeneratedContent)
+    {
+        <!-- Wiki content displayed in iframe -->
+        <div class="wiki-iframe-container">
+            <iframe src="/wiki-embed?theme=@(ViewContext.HttpContext.Request.Cookies["theme"] ?? "light")" 
+                    class="wiki-iframe" 
+                    title="Wiki Content"
+                    id="wiki-preview-frame">
+                <p>Your browser doesn't support iframes. <a href="@Model.DefaultPageUrl" target="_blank">Click here to view the wiki</a>.</p>
+            </iframe>
+        </div>
+        
+        <!-- Optional management toolbar -->
+        <div class="wiki-toolbar mt-4 pt-3 border-top">
+            <div class="text-center">
+                <small class="text-muted">
+                    <i class="bi bi-gear"></i> 
+                    <a href="/Wiki" class="text-muted">Manage Wiki Content</a>
+                    @if (!string.IsNullOrEmpty(Model.DefaultPageUrl))
+                    {
+                        <span class="mx-2">•</span>
+                        <a href="@Model.DefaultPageUrl" target="_blank" class="text-muted">
+                            <i class="bi bi-arrow-up-right-square"></i> View Original
+                        </a>
+                    }
+                </small>
+            </div>
+        </div>
+    }
+    else
+    {
+        <!-- Fallback content when no wiki is available -->
+        <div class="no-wiki-content">
+            @Html.Raw(Model.WikiContent)
+        </div>
+    }
     
-    <div class="mt-4">
-        <a class="btn btn-primary btn-lg" asp-page="/Wiki" role="button">
-            Go to Wiki
-        </a>
-    </div>
-    
-    <div class="mt-3">
-        <p class="text-muted">
-            Learn about <a href="https://learn.microsoft.com/aspnet/core">building Web apps with ASP.NET Core</a>.
-        </p>
+    <!-- Loading overlay for iframe refresh -->
+    <div id="wiki-loading-overlay" class="wiki-loading-overlay d-none">
+        <div class="loading-content">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2 mb-0">Refreshing content...</p>
+        </div>
     </div>
 </div>
+
+<style>
+    /* Wiki iframe container */
+    .wiki-iframe-container {
+        position: relative;
+        min-height: 600px;
+        border: 1px solid var(--bs-border-color);
+        border-radius: 0.375rem;
+        overflow: hidden;
+        background-color: var(--bs-body-bg);
+    }
+    
+    /* Wiki iframe styling */
+    .wiki-iframe {
+        width: 100%;
+        height: 600px;
+        border: none;
+        background-color: var(--bs-body-bg);
+        transition: opacity 0.3s ease-in-out;
+    }
+    
+    .wiki-iframe.loading {
+        opacity: 0.6;
+    }
+    
+    /* Loading overlay */
+    .wiki-loading-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(var(--bs-body-bg-rgb), 0.8);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10;
+        border-radius: 0.375rem;
+    }
+    
+    .loading-content {
+        text-align: center;
+        color: var(--bs-body-color);
+    }
+    
+    /* Toolbar styling */
+    .wiki-toolbar {
+        border-top-color: var(--bs-border-color) !important;
+    }
+    
+    .wiki-toolbar a {
+        text-decoration: none;
+    }
+    
+    .wiki-toolbar a:hover {
+        text-decoration: underline;
+    }
+    
+    /* Fallback content styling */
+    .no-wiki-content {
+        min-height: 400px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+</style>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Add responsive iframe sizing
+        function updateIframeSize() {
+            const iframe = document.getElementById('wiki-preview-frame');
+            const container = document.querySelector('.wiki-iframe-container');
+            
+            if (iframe && container) {
+                if (window.innerWidth <= 576) {
+                    iframe.style.height = '400px';
+                    container.style.minHeight = '400px';
+                } else if (window.innerWidth <= 768) {
+                    iframe.style.height = '500px';
+                    container.style.minHeight = '500px';
+                } else {
+                    iframe.style.height = '600px';
+                    container.style.minHeight = '600px';
+                }
+            }
+        }
+        
+        // Initialize and set up resize listener
+        updateIframeSize();
+        window.addEventListener('resize', updateIframeSize);
+        
+        // Simple iframe refresh function
+        window.refreshIframeContent = function() {
+            const iframe = document.getElementById('wiki-preview-frame');
+            const loadingOverlay = document.getElementById('wiki-loading-overlay');
+            
+            if (iframe && loadingOverlay) {
+                // Show loading overlay
+                loadingOverlay.classList.remove('d-none');
+                iframe.classList.add('loading');
+                
+                // Get current theme from cookie or default
+                const theme = document.documentElement.getAttribute('data-theme') || 'light';
+                
+                // Force reload iframe with timestamp
+                const newSrc = `/wiki-embed?theme=${theme}&t=${Date.now()}`;
+                iframe.src = newSrc;
+                
+                // Hide loading when iframe loads
+                iframe.onload = function() {
+                    loadingOverlay.classList.add('d-none');
+                    iframe.classList.remove('loading');
+                };
+                
+                return true;
+            }
+            return false;
+        };
+    });
+</script>

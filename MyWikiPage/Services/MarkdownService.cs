@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 
 namespace MyWikiPage.Services
 {
-    public class MarkdownService : IMarkdownService
+    public sealed class MarkdownService : IMarkdownService
     {
         private readonly MarkdownPipeline _pipeline;
         private readonly ILogger<MarkdownService> _logger;
@@ -23,9 +23,20 @@ namespace MyWikiPage.Services
                 var html = Markdown.ToHtml(markdownContent, _pipeline);
                 return Task.FromResult(html);
             }
-            catch (Exception ex)
+            catch (ArgumentException ex)
             {
-                _logger.LogError(ex, "Error converting markdown to HTML");
+                if (_logger.IsEnabled(LogLevel.Error))
+                {
+                    _logger.LogError(ex, "Invalid argument when converting markdown to HTML");
+                }
+                return Task.FromResult($"<p>Error processing markdown: {ex.Message}</p>");
+            }
+            catch (InvalidOperationException ex)
+            {
+                if (_logger.IsEnabled(LogLevel.Error))
+                {
+                    _logger.LogError(ex, "Invalid operation when converting markdown to HTML");
+                }
                 return Task.FromResult($"<p>Error processing markdown: {ex.Message}</p>");
             }
         }
@@ -43,24 +54,33 @@ namespace MyWikiPage.Services
         {
             try
             {
-                _logger.LogInformation("Starting wiki generation from '{MarkdownPath}' to '{OutputPath}'", markdownFolderPath, outputFolderPath);
+                if (_logger.IsEnabled(LogLevel.Information))
+                {
+                    _logger.LogInformation("Starting wiki generation from '{MarkdownPath}' to '{OutputPath}'", markdownFolderPath, outputFolderPath);
+                }
                 
                 if (!Directory.Exists(markdownFolderPath))
                 {
-                    _logger.LogWarning("Markdown folder does not exist: {MarkdownPath}", markdownFolderPath);
+                    if (_logger.IsEnabled(LogLevel.Warning))
+                    {
+                        _logger.LogWarning("Markdown folder does not exist: {MarkdownPath}", markdownFolderPath);
+                    }
                     return false;
                 }
 
                 // Create output directory if it doesn't exist
                 Directory.CreateDirectory(outputFolderPath);
 
-                var markdownFiles = await GetMarkdownFilesAsync(markdownFolderPath);
-                _logger.LogInformation("Found {FileCount} markdown files to process", markdownFiles.Count);
+                var markdownFiles = await GetMarkdownFilesAsync(markdownFolderPath).ConfigureAwait(false);
+                if (_logger.IsEnabled(LogLevel.Information))
+                {
+                    _logger.LogInformation("Found {FileCount} markdown files to process", markdownFiles.Count);
+                }
                 
                 foreach (var markdownFile in markdownFiles)
                 {
-                    var markdownContent = await File.ReadAllTextAsync(markdownFile);
-                    var html = await ConvertMarkdownToHtmlAsync(markdownContent, markdownFolderPath);
+                    var markdownContent = await File.ReadAllTextAsync(markdownFile).ConfigureAwait(false);
+                    var html = await ConvertMarkdownToHtmlAsync(markdownContent, markdownFolderPath).ConfigureAwait(false);
                     
                     // Process internal links to point to generated HTML files
                     html = ProcessInternalLinks(html, markdownFolderPath, outputFolderPath);
@@ -77,16 +97,41 @@ namespace MyWikiPage.Services
                     if (!string.IsNullOrEmpty(outputDir))
                         Directory.CreateDirectory(outputDir);
                     
-                    await File.WriteAllTextAsync(outputFile, fullHtml);
-                    _logger.LogDebug("Generated HTML file: {OutputFile}", outputFile);
+                    await File.WriteAllTextAsync(outputFile, fullHtml).ConfigureAwait(false);
+                    if (_logger.IsEnabled(LogLevel.Debug))
+                    {
+                        _logger.LogDebug("Generated HTML file: {OutputFile}", outputFile);
+                    }
                 }
 
-                _logger.LogInformation("Wiki generation completed successfully. Generated {FileCount} pages", markdownFiles.Count);
+                if (_logger.IsEnabled(LogLevel.Information))
+                {
+                    _logger.LogInformation("Wiki generation completed successfully. Generated {FileCount} pages", markdownFiles.Count);
+                }
                 return true;
             }
-            catch (Exception ex)
+            catch (IOException ex)
             {
-                _logger.LogError(ex, "Error generating HTML from markdown folder");
+                if (_logger.IsEnabled(LogLevel.Error))
+                {
+                    _logger.LogError(ex, "I/O error generating HTML from markdown folder");
+                }
+                return false;
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                if (_logger.IsEnabled(LogLevel.Error))
+                {
+                    _logger.LogError(ex, "Access denied when generating HTML from markdown folder");
+                }
+                return false;
+            }
+            catch (ArgumentException ex)
+            {
+                if (_logger.IsEnabled(LogLevel.Error))
+                {
+                    _logger.LogError(ex, "Invalid argument when generating HTML from markdown folder");
+                }
                 return false;
             }
         }
@@ -105,7 +150,7 @@ namespace MyWikiPage.Services
             return html;
         }
 
-        private string GenerateHtmlDocument(string bodyContent, string title)
+        private static string GenerateHtmlDocument(string bodyContent, string title)
         {
             return $@"<!DOCTYPE html>
 <html lang=""en"">

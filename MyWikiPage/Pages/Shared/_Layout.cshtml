@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/MyWikiPage.styles.css" asp-append-version="true" />
-    <!-- Bootstrap Icons for refresh button -->
+    <!-- Bootstrap Icons for refresh button and theme toggle -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
 </head>
 <body>
@@ -22,19 +22,28 @@
                 <div class="navbar-collapse collapse d-sm-inline-flex justify-content-between">
                     <ul class="navbar-nav flex-grow-1">
                         <li class="nav-item">
-                            <a class="nav-link text-dark" asp-area="" asp-page="/Index">Home</a>
-                        </li>
-                        <li class="nav-item dropdown">
-                            <a class="nav-link dropdown-toggle text-dark" href="#" id="infoDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                                Info
+                            <a class="nav-link text-dark" asp-area="" asp-page="/Index">
+                                <i class="bi bi-house"></i> Wiki
                             </a>
-                            <ul class="dropdown-menu" aria-labelledby="infoDropdown">
-                                <li><a class="dropdown-item" asp-area="" asp-page="/Wiki">Wiki</a></li>
-                            </ul>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link text-dark" asp-area="" asp-page="/Wiki">
+                                <i class="bi bi-gear"></i> Manage
+                            </a>
                         </li>
                     </ul>
-                    <div class="d-flex">
-                        <button type="button" class="btn btn-outline-secondary btn-sm me-2" title="Refresh Wiki" id="refreshButton">
+                    <div class="d-flex align-items-center">
+                        <!-- Theme Toggle Buttons -->
+                        <div class="btn-group me-3" role="group" aria-label="Theme selector">
+                            <button type="button" class="btn btn-outline-secondary btn-sm theme-toggle" data-theme="light" title="Light Mode">
+                                <i class="bi bi-sun"></i>
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm theme-toggle" data-theme="dark" title="Dark Mode">
+                                <i class="bi bi-moon"></i>
+                            </button>
+                        </div>
+                        <!-- Refresh Button -->
+                        <button type="button" class="btn btn-outline-secondary btn-sm" title="Refresh Wiki Content" id="refreshButton">
                             <i class="bi bi-arrow-clockwise"></i>
                         </button>
                     </div>
@@ -74,18 +83,68 @@
     <script src="~/js/site.js" asp-append-version="true"></script>
 
     <script>
+        // Theme Management
+        function initializeTheme() {
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            setTheme(savedTheme);
+        }
+
+        function setTheme(theme) {
+            document.documentElement.setAttribute('data-theme', theme);
+            localStorage.setItem('theme', theme);
+            
+            // Store theme in cookie for server-side access
+            document.cookie = `theme=${theme}; path=/; max-age=31536000`; // 1 year
+            
+            // Update navbar classes based on theme
+            const navbar = document.querySelector('.navbar');
+            const navLinks = document.querySelectorAll('.nav-link, .navbar-brand, .dropdown-item');
+            
+            if (theme === 'dark') {
+                navbar.classList.remove('navbar-light', 'bg-white');
+                navbar.classList.add('navbar-dark', 'bg-dark');
+                navLinks.forEach(link => {
+                    link.classList.remove('text-dark');
+                    link.classList.add('text-light');
+                });
+            } else {
+                navbar.classList.remove('navbar-dark', 'bg-dark');
+                navbar.classList.add('navbar-light', 'bg-white');
+                navLinks.forEach(link => {
+                    link.classList.remove('text-light');
+                    link.classList.add('text-dark');
+                });
+            }
+            
+            // Update active theme button
+            document.querySelectorAll('.theme-toggle').forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.dataset.theme === theme) {
+                    btn.classList.add('active');
+                }
+            });
+        }
+
         // Handle refresh button functionality
         document.addEventListener('DOMContentLoaded', function() {
+            // Initialize theme
+            initializeTheme();
+            
+            // Theme toggle functionality
+            document.querySelectorAll('.theme-toggle').forEach(button => {
+                button.addEventListener('click', function() {
+                    const theme = this.dataset.theme;
+                    setTheme(theme);
+                });
+            });
+            
             const refreshButton = document.getElementById('refreshButton');
             const refreshToast = document.getElementById('refreshToast');
             const toastMessage = document.getElementById('toastMessage');
             
             if (refreshButton) {
                 refreshButton.addEventListener('click', async function(e) {
-                    // Prevent any default behavior completely
                     e.preventDefault();
-                    e.stopPropagation();
-                    e.stopImmediatePropagation();
                     
                     const button = e.target.closest('button');
                     const icon = button.querySelector('i');
@@ -97,9 +156,7 @@
                     button.disabled = true;
                     
                     try {
-                        console.log('Making request to /Wiki?handler=RefreshAjax');
-                        
-                        // Make simplified AJAX request (no anti-forgery token needed)
+                        // First, refresh the wiki generation
                         const response = await fetch('/Wiki?handler=RefreshAjax', {
                             method: 'POST',
                             headers: {
@@ -108,46 +165,34 @@
                             }
                         });
                         
-                        console.log('Response status:', response.status);
-                        console.log('Response ok:', response.ok);
-                        
                         if (!response.ok) {
-                            const errorText = await response.text();
-                            console.error('Response error:', errorText);
                             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                         }
                         
-                        const contentType = response.headers.get('content-type');
-                        console.log('Content-Type:', contentType);
+                        const result = await response.json();
                         
-                        if (!contentType || !contentType.includes('application/json')) {
-                            const responseText = await response.text();
-                            console.error('Non-JSON response:', responseText);
-                            throw new Error(`Expected JSON but got ${contentType}. Response: ${responseText.substring(0, 200)}`);
+                        if (!result.success) {
+                            throw new Error(result.message || 'Failed to refresh wiki');
                         }
                         
-                        const result = await response.json();
-                        console.log('Success result:', result);
+                        // Then refresh iframe if available (wait a moment for generation to complete)
+                        setTimeout(() => {
+                            if (typeof window.refreshIframeContent === 'function') {
+                                window.refreshIframeContent();
+                            }
+                        }, 500);
                         
-                        // Update toast message and style based on result
-                        toastMessage.textContent = result.message;
+                        // Show success toast
+                        toastMessage.textContent = result.message || 'Wiki pages have been successfully generated!';
                         const toastHeader = refreshToast.querySelector('.toast-header');
                         const toastIcon = toastHeader.querySelector('i');
                         
-                        // Reset toast header classes
                         toastHeader.classList.remove('bg-success', 'bg-danger', 'text-white');
+                        toastHeader.classList.add('bg-success', 'text-white');
+                        toastIcon.className = 'bi bi-check-circle me-2 text-white';
                         
-                        if (result.success) {
-                            toastHeader.classList.add('bg-success', 'text-white');
-                            toastIcon.className = 'bi bi-check-circle me-2 text-white';
-                        } else {
-                            toastHeader.classList.add('bg-danger', 'text-white');
-                            toastIcon.className = 'bi bi-exclamation-triangle me-2 text-white';
-                        }
-                        
-                        // Show toast for 3 seconds
                         const toast = new bootstrap.Toast(refreshToast, {
-                            delay: 3000,
+                            delay: 2000,
                             autohide: true
                         });
                         toast.show();
@@ -155,33 +200,30 @@
                     } catch (error) {
                         console.error('Error during refresh:', error);
                         
-                        // Show error toast with simplified message
-                        toastMessage.textContent = 'Failed to refresh wiki. Please try again.';
+                        // Show error toast
+                        const errorMessage = error.message || 'Failed to refresh wiki. Please try again.';
+                        toastMessage.textContent = errorMessage;
                         const toastHeader = refreshToast.querySelector('.toast-header');
                         const toastIcon = toastHeader.querySelector('i');
                         
-                        // Reset and set error styles
                         toastHeader.classList.remove('bg-success', 'bg-danger', 'text-white');
                         toastHeader.classList.add('bg-danger', 'text-white');
                         toastIcon.className = 'bi bi-exclamation-triangle me-2 text-white';
                         
                         const toast = new bootstrap.Toast(refreshToast, {
-                            delay: 5000, // Show error messages longer
+                            delay: 4000,
                             autohide: true
                         });
                         toast.show();
                     } finally {
-                        // Re-enable button and stop spinning after a short delay
+                        // Re-enable button and stop spinning
                         setTimeout(() => {
                             button.disabled = false;
                             if (icon) {
                                 icon.classList.remove('spinning');
                             }
-                        }, 500); // Small delay to show the spinning animation briefly
+                        }, 500);
                     }
-                    
-                    // Explicitly return false to prevent any form submission
-                    return false;
                 });
             }
         });

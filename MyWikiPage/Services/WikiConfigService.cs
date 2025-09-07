@@ -1,8 +1,9 @@
 using Microsoft.Extensions.FileProviders;
+using System.Globalization;
 
 namespace MyWikiPage.Services
 {
-    public class WikiConfigService : IWikiConfigService
+    public sealed class WikiConfigService : IWikiConfigService
     {
         private readonly IWebHostEnvironment _environment;
         private readonly IConfiguration _configuration;
@@ -24,7 +25,10 @@ namespace MyWikiPage.Services
                 if (string.IsNullOrEmpty(configPath))
                 {
                     var defaultPath = Path.Combine(_environment.ContentRootPath, "markdown");
-                    _logger.LogDebug("Using default markdown path: {Path}", defaultPath);
+                    if (_logger.IsEnabled(LogLevel.Debug))
+                    {
+                        _logger.LogDebug("Using default markdown path: {Path}", defaultPath);
+                    }
                     return defaultPath;
                 }
                 
@@ -33,7 +37,10 @@ namespace MyWikiPage.Services
                     ? configPath 
                     : Path.Combine(_environment.ContentRootPath, configPath);
                     
-                _logger.LogDebug("Resolved markdown path: {Path}", resolvedPath);
+                if (_logger.IsEnabled(LogLevel.Debug))
+                {
+                    _logger.LogDebug("Resolved markdown path: {Path}", resolvedPath);
+                }
                 
                 return resolvedPath;
             }
@@ -48,7 +55,10 @@ namespace MyWikiPage.Services
                 if (string.IsNullOrEmpty(configPath))
                 {
                     var defaultPath = Path.Combine(_environment.WebRootPath, "wiki");
-                    _logger.LogDebug("Using default output path: {Path}", defaultPath);
+                    if (_logger.IsEnabled(LogLevel.Debug))
+                    {
+                        _logger.LogDebug("Using default output path: {Path}", defaultPath);
+                    }
                     return defaultPath;
                 }
                 
@@ -57,7 +67,10 @@ namespace MyWikiPage.Services
                     ? configPath 
                     : Path.Combine(_environment.ContentRootPath, configPath);
                     
-                _logger.LogDebug("Resolved output path: {Path}", resolvedPath);
+                if (_logger.IsEnabled(LogLevel.Debug))
+                {
+                    _logger.LogDebug("Resolved output path: {Path}", resolvedPath);
+                }
                 
                 return resolvedPath;
             }
@@ -65,7 +78,9 @@ namespace MyWikiPage.Services
 
         public string GetWebPath(string filePath)
         {
-            if (filePath.StartsWith(OutputFolderPath))
+            ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
+            
+            if (filePath.StartsWith(OutputFolderPath, StringComparison.OrdinalIgnoreCase))
             {
                 var relativePath = Path.GetRelativePath(OutputFolderPath, filePath);
                 return "/wiki/" + relativePath.Replace('\\', '/');

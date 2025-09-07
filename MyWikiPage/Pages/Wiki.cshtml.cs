@@ -1,11 +1,12 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using MyWikiPage.Services;
+using System.Collections.ObjectModel;
 
 namespace MyWikiPage.Pages
 {
     [IgnoreAntiforgeryToken]
-    public class WikiModel : PageModel
+    public sealed class WikiModel : PageModel
     {
         private readonly IMarkdownService _markdownService;
         private readonly IWikiConfigService _wikiConfig;
@@ -18,17 +19,18 @@ namespace MyWikiPage.Pages
             _logger = logger;
         }
 
-        public List<string> GeneratedFiles { get; set; } = new();
+        private readonly List<string> _generatedFiles = [];
+        public ReadOnlyCollection<string> GeneratedFiles => _generatedFiles.AsReadOnly();
         public string? DefaultPageUrl { get; set; }
         public bool HasGeneratedContent { get; set; }
-        public string MarkdownFolderPath => _wikiConfig.MarkdownFolderPath;
-        public string OutputFolderPath => _wikiConfig.OutputFolderPath;
-
-        [TempData]
+        public string MarkdownFolderPath { get; set; } = string.Empty;
+        public string OutputFolderPath { get; set; } = string.Empty;
         public string? Message { get; set; }
 
         public void OnGet()
         {
+            MarkdownFolderPath = _wikiConfig.MarkdownFolderPath;
+            OutputFolderPath = _wikiConfig.OutputFolderPath;
             LoadGeneratedFiles();
             DefaultPageUrl = _wikiConfig.GetDefaultPage();
         }
@@ -39,23 +41,40 @@ namespace MyWikiPage.Pages
             {
                 var success = await _markdownService.GenerateHtmlFromMarkdownFolderAsync(
                     _wikiConfig.MarkdownFolderPath, 
-                    _wikiConfig.OutputFolderPath);
+                    _wikiConfig.OutputFolderPath).ConfigureAwait(false);
 
                 if (success)
                 {
                     Message = "Wiki pages have been successfully generated!";
-                    _logger.LogInformation("Wiki refresh completed successfully");
+                    if (_logger.IsEnabled(LogLevel.Information))
+                    {
+                        _logger.LogInformation("Wiki refresh completed successfully");
+                    }
                 }
                 else
                 {
                     Message = "Failed to generate wiki pages. Check if the markdown folder exists.";
-                    _logger.LogWarning("Wiki refresh failed");
+                    if (_logger.IsEnabled(LogLevel.Warning))
+                    {
+                        _logger.LogWarning("Wiki refresh failed");
+                    }
                 }
             }
-            catch (Exception ex)
+            catch (IOException ex)
             {
-                Message = $"Error during refresh: {ex.Message}";
-                _logger.LogError(ex, "Error during wiki refresh");
+                Message = "I/O error occurred during wiki generation.";
+                if (_logger.IsEnabled(LogLevel.Error))
+                {
+                    _logger.LogError(ex, "I/O error during wiki refresh");
+                }
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                Message = "Access denied when generating wiki pages.";
+                if (_logger.IsEnabled(LogLevel.Error))
+                {
+                    _logger.LogError(ex, "Access denied during wiki refresh");
+                }
             }
 
             LoadGeneratedFiles();
@@ -67,19 +86,43 @@ namespace MyWikiPage.Pages
         public async Task<IActionResult> OnPostRefreshAjaxAsync()
         {
             _logger.LogInformation("RefreshAjax endpoint called");
+            _logger.LogInformation("Markdown folder path: {MarkdownPath}", _wikiConfig.MarkdownFolderPath);
+            _logger.LogInformation("Output folder path: {OutputPath}", _wikiConfig.OutputFolderPath);
             
             try
             {
+                // Check if markdown folder exists
+                if (!Directory.Exists(_wikiConfig.MarkdownFolderPath))
+                {
+                    _logger.LogWarning("Markdown folder does not exist: {MarkdownPath}", _wikiConfig.MarkdownFolderPath);
+                    return new JsonResult(new { 
+                        success = false, 
+                        message = $"Markdown folder does not exist: {_wikiConfig.MarkdownFolderPath}" 
+                    });
+                }
+
+                // Check if there are any markdown files
+                var markdownFiles = Directory.GetFiles(_wikiConfig.MarkdownFolderPath, "*.md", SearchOption.AllDirectories);
+                _logger.LogInformation("Found {FileCount} markdown files in {MarkdownPath}", markdownFiles.Length, _wikiConfig.MarkdownFolderPath);
+                
+                if (markdownFiles.Length == 0)
+                {
+                    return new JsonResult(new { 
+                        success = false, 
+                        message = "No markdown files found in the markdown folder." 
+                    });
+                }
+
                 var success = await _markdownService.GenerateHtmlFromMarkdownFolderAsync(
                     _wikiConfig.MarkdownFolderPath, 
-                    _wikiConfig.OutputFolderPath);
+                    _wikiConfig.OutputFolderPath).ConfigureAwait(false);
 
                 if (success)
                 {
                     _logger.LogInformation("Wiki refresh completed successfully via AJAX");
                     return new JsonResult(new { 
                         success = true, 
-                        message = "Wiki pages have been successfully generated!" 
+                        message = $"Wiki pages have been successfully generated! Processed {markdownFiles.Length} files." 
                     });
                 }
                 else
@@ -87,33 +130,48 @@ namespace MyWikiPage.Pages
                     _logger.LogWarning("Wiki refresh failed via AJAX");
                     return new JsonResult(new { 
                         success = false, 
-                        message = "Failed to generate wiki pages. Check if the markdown folder exists." 
+                        message = "Failed to generate wiki pages. Check the application logs for details." 
                     });
                 }
             }
-            catch (Exception ex)
+            catch (IOException ex)
             {
-                _logger.LogError(ex, "Error during wiki refresh via AJAX: {Error}", ex.Message);
+                _logger.LogError(ex, "I/O error during wiki refresh via AJAX");
                 return new JsonResult(new { 
                     success = false, 
-                    message = $"Error during refresh: {ex.Message}" 
+                    message = $"I/O error occurred: {ex.Message}" 
+                });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                _logger.LogError(ex, "Access denied during wiki refresh via AJAX");
+                return new JsonResult(new { 
+                    success = false, 
+                    message = $"Access denied: {ex.Message}" 
+                });
+            }
+            catch (ArgumentException ex)
+            {
+                _logger.LogError(ex, "Invalid argument during wiki refresh via AJAX");
+                return new JsonResult(new { 
+                    success = false, 
+                    message = $"Configuration error: {ex.Message}" 
                 });
             }
         }
 
         private void LoadGeneratedFiles()
         {
-            GeneratedFiles.Clear();
+            _generatedFiles.Clear();
             
             if (Directory.Exists(_wikiConfig.OutputFolderPath))
             {
                 var htmlFiles = Directory.GetFiles(_wikiConfig.OutputFolderPath, "*.html", SearchOption.AllDirectories);
-                GeneratedFiles = htmlFiles
+                _generatedFiles.AddRange(htmlFiles
                     .Select(f => _wikiConfig.GetWebPath(f))
-                    .OrderBy(f => f)
-                    .ToList();
+                    .OrderBy(f => f));
                 
-                HasGeneratedContent = GeneratedFiles.Any();
+                HasGeneratedContent = _generatedFiles.Count > 0;
             }
         }
     }

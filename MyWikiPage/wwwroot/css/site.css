@@ -21,6 +21,124 @@ body {
   margin-bottom: 60px;
 }
 
+/* Theme Variables */
+:root {
+  --bs-body-bg: #ffffff;
+  --bs-body-color: #212529;
+  --bs-secondary-bg: #f8f9fa;
+  --bs-tertiary-bg: #ffffff;
+  --bs-border-color: #dee2e6;
+  --bs-card-bg: #ffffff;
+  --bs-card-border-color: #dee2e6;
+}
+
+[data-theme="dark"] {
+  --bs-body-bg: #121212;
+  --bs-body-color: #e9ecef;
+  --bs-secondary-bg: #1e1e1e;
+  --bs-tertiary-bg: #2d2d2d;
+  --bs-border-color: #495057;
+  --bs-card-bg: #1e1e1e;
+  --bs-card-border-color: #495057;
+}
+
+/* Apply theme variables */
+body {
+  background-color: var(--bs-body-bg) !important;
+  color: var(--bs-body-color) !important;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Card styling for dark mode */
+.card {
+  background-color: var(--bs-card-bg);
+  border-color: var(--bs-card-border-color);
+}
+
+.card-body {
+  background-color: var(--bs-card-bg);
+}
+
+/* Footer styling */
+.footer {
+  background-color: var(--bs-secondary-bg);
+  border-color: var(--bs-border-color);
+}
+
+/* Form controls in dark mode */
+[data-theme="dark"] .form-control,
+[data-theme="dark"] .form-select {
+  background-color: var(--bs-secondary-bg);
+  border-color: var(--bs-border-color);
+  color: var(--bs-body-color);
+}
+
+[data-theme="dark"] .form-control:focus,
+[data-theme="dark"] .form-select:focus {
+  background-color: var(--bs-secondary-bg);
+  border-color: #86b7fe;
+  color: var(--bs-body-color);
+}
+
+/* Buttons in dark mode */
+[data-theme="dark"] .btn-outline-secondary {
+  border-color: var(--bs-border-color);
+  color: var(--bs-body-color);
+}
+
+[data-theme="dark"] .btn-outline-secondary:hover {
+  background-color: var(--bs-secondary-bg);
+  border-color: var(--bs-border-color);
+  color: var(--bs-body-color);
+}
+
+/* Theme toggle button styling */
+.theme-toggle {
+  transition: all 0.3s ease;
+}
+
+.theme-toggle.active {
+  background-color: #0d6efd;
+  border-color: #0d6efd;
+  color: white;
+}
+
+.theme-toggle:hover:not(.active) {
+  transform: scale(1.05);
+}
+
+/* Dropdown menu in dark mode */
+[data-theme="dark"] .dropdown-menu {
+  background-color: var(--bs-secondary-bg);
+  border-color: var(--bs-border-color);
+}
+
+[data-theme="dark"] .dropdown-item {
+  color: var(--bs-body-color);
+}
+
+[data-theme="dark"] .dropdown-item:hover {
+  background-color: var(--bs-tertiary-bg);
+  color: var(--bs-body-color);
+}
+
+/* Toast styling for dark mode */
+[data-theme="dark"] .toast {
+  background-color: var(--bs-secondary-bg);
+  border-color: var(--bs-border-color);
+  color: var(--bs-body-color);
+}
+
+[data-theme="dark"] .toast-header {
+  background-color: var(--bs-tertiary-bg);
+  border-color: var(--bs-border-color);
+  color: var(--bs-body-color);
+}
+
+[data-theme="dark"] .btn-close {
+  filter: invert(1) grayscale(100%) brightness(200%);
+}
+
 /* Refresh button styling */
 #refreshButton {
   transition: all 0.3s ease;
@@ -47,12 +165,12 @@ body {
 
 /* Dropdown menu styling */
 .dropdown-menu {
-  border: 1px solid #dee2e6;
+  border: 1px solid var(--bs-border-color);
   box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
 }
 
 .dropdown-item:hover {
-  background-color: #f8f9fa;
+  background-color: var(--bs-secondary-bg);
 }
 
 /* Toast styling */
@@ -61,7 +179,7 @@ body {
 }
 
 .toast {
-  border: 1px solid rgba(0, 0, 0, 0.175);
+  border: 1px solid var(--bs-border-color);
   box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
 }
 
@@ -79,4 +197,40 @@ body {
 
 .toast-header.text-white .btn-close {
   filter: invert(1) grayscale(100%) brightness(200%);
+}
+
+/* Links in dark mode */
+[data-theme="dark"] a {
+  color: #86b7fe;
+}
+
+[data-theme="dark"] a:hover {
+  color: #a6d2ff;
+}
+
+/* Table styling for dark mode */
+[data-theme="dark"] .table {
+  color: var(--bs-body-color);
+}
+
+[data-theme="dark"] .table-striped > tbody > tr:nth-of-type(odd) > td,
+[data-theme="dark"] .table-striped > tbody > tr:nth-of-type(odd) > th {
+  background-color: var(--bs-secondary-bg);
+}
+
+/* Code blocks in dark mode */
+[data-theme="dark"] code {
+  background-color: var(--bs-secondary-bg);
+  color: #f8f8f2;
+}
+
+[data-theme="dark"] pre {
+  background-color: var(--bs-secondary-bg);
+  color: var(--bs-body-color);
+  border: 1px solid var(--bs-border-color);
+}
+
+/* Blockquotes in dark mode */
+[data-theme="dark"] blockquote {
+  border-left-color: var(--bs-border-color);
 }
