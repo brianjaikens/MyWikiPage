@@ -65,3 +65,6 @@ finally
     // Ensure to flush and stop internal timers/threads before application-exit (Avoid segmentation fault on Linux)
     LogManager.Shutdown();
 }
+
+// Make Program class public for testing
+public partial class Program { }

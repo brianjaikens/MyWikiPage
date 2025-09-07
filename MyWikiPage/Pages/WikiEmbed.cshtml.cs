@@ -51,8 +51,16 @@ namespace MyWikiPage.Pages
                 {
                     // Convert web path back to file path
                     var webPath = DefaultPageUrl.TrimStart('/');
-                    targetFilePath = Path.Combine(_wikiConfig.OutputFolderPath, 
-                        webPath.Substring("wiki/".Length));
+                    if (webPath.StartsWith("wiki/", StringComparison.OrdinalIgnoreCase))
+                    {
+                        targetFilePath = Path.Combine(_wikiConfig.OutputFolderPath, 
+                            webPath.Substring("wiki/".Length));
+                    }
+                    else
+                    {
+                        // If the path doesn't start with "wiki/", use it as-is
+                        targetFilePath = Path.Combine(_wikiConfig.OutputFolderPath, webPath);
+                    }
                 }
 
                 if (targetFilePath != null && System.IO.File.Exists(targetFilePath))
@@ -101,6 +109,14 @@ namespace MyWikiPage.Pages
                 if (_logger.IsEnabled(LogLevel.Error))
                 {
                     _logger.LogError(ex, "Access denied loading wiki content for embed view");
+                }
+                HasContent = false;
+            }
+            catch (ArgumentOutOfRangeException ex)
+            {
+                if (_logger.IsEnabled(LogLevel.Error))
+                {
+                    _logger.LogError(ex, "Invalid path format when loading wiki content for embed view");
                 }
                 HasContent = false;
             }
