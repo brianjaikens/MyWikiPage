@@ -7,6 +7,8 @@
 
 A modern ASP.NET Core Razor Pages application that seamlessly converts markdown files into a navigable HTML wiki with live content updates.
 
+I feel the need to apologise for this read me. I didn't write it. It was Copilot. It's just a little too much for my tastes. My fault for not restraining it more. But this whole project was an AI experiment. There are better alternatives to creating sites from Markdown, like Jeckyl.
+
 ## Features
 
 - **Markdown Processing**: Converts .md files to HTML using Markdig with advanced extensions
