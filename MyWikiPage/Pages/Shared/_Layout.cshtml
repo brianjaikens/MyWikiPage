@@ -175,10 +175,13 @@
                             throw new Error(result.message || 'Failed to refresh wiki');
                         }
                         
-                        // Then refresh iframe if available (wait a moment for generation to complete)
+                        // Refresh wiki content if we're on the home page and have the refresh function
                         setTimeout(() => {
-                            if (typeof window.refreshIframeContent === 'function') {
-                                window.refreshIframeContent();
+                            if (typeof window.refreshWikiContent === 'function') {
+                                window.refreshWikiContent();
+                            } else {
+                                // If no refresh function, reload the page
+                                window.location.reload();
                             }
                         }, 500);
                         

@@ -5,18 +5,23 @@
 }
 
 <div class="container">
+    <!-- Wiki content rendered directly -->
+    <div id="wiki-content-container" class="wiki-content">
+        @Html.Raw(Model.WikiContent)
+    </div>
+    
+    <!-- Loading overlay for content refresh -->
+    <div id="wiki-loading-overlay" class="wiki-loading-overlay d-none">
+        <div class="loading-content">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2 mb-0">Loading content...</p>
+        </div>
+    </div>
+    
     @if (Model.HasGeneratedContent)
     {
-        <!-- Wiki content displayed in iframe -->
-        <div class="wiki-iframe-container">
-            <iframe src="/wiki-embed?theme=@(ViewContext.HttpContext.Request.Cookies["theme"] ?? "light")" 
-                    class="wiki-iframe" 
-                    title="Wiki Content"
-                    id="wiki-preview-frame">
-                <p>Your browser doesn't support iframes. <a href="@Model.DefaultPageUrl" target="_blank">Click here to view the wiki</a>.</p>
-            </iframe>
-        </div>
-        
         <!-- Optional management toolbar -->
         <div class="wiki-toolbar mt-4 pt-3 border-top">
             <div class="text-center">
@@ -30,80 +35,205 @@
                             <i class="bi bi-arrow-up-right-square"></i> View Original
                         </a>
                     }
+                    <span class="mx-2">•</span>
+                    <button id="refreshButton" class="btn btn-sm btn-outline-secondary" onclick="refreshWikiContent()">
+                        <i class="bi bi-arrow-clockwise" id="refreshIcon"></i> Refresh
+                    </button>
                 </small>
             </div>
         </div>
     }
-    else
-    {
-        <!-- Fallback content when no wiki is available -->
-        <div class="no-wiki-content">
-            @Html.Raw(Model.WikiContent)
-        </div>
-    }
-    
-    <!-- Loading overlay for iframe refresh -->
-    <div id="wiki-loading-overlay" class="wiki-loading-overlay d-none">
-        <div class="loading-content">
-            <div class="spinner-border text-primary" role="status">
-                <span class="visually-hidden">Loading...</span>
-            </div>
-            <p class="mt-2 mb-0">Refreshing content...</p>
-        </div>
-    </div>
 </div>
 
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        // Add responsive iframe sizing
-        function updateIframeSize() {
-            const iframe = document.getElementById('wiki-preview-frame');
-            const container = document.querySelector('.wiki-iframe-container');
-            
-            if (iframe && container) {
-                if (window.innerWidth <= 576) {
-                    iframe.style.height = '400px';
-                    container.style.minHeight = '400px';
-                } else if (window.innerWidth <= 768) {
-                    iframe.style.height = '500px';
-                    container.style.minHeight = '500px';
-                } else {
-                    iframe.style.height = '600px';
-                    container.style.minHeight = '600px';
-                }
+        // Set up AJAX navigation for wiki links
+        setupWikiNavigation();
+        
+        // Check if we have a page parameter in the URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const currentPage = urlParams.get('page');
+        
+        // Get model state from server
+        const hasGeneratedContent = @(Model.HasGeneratedContent.ToString().ToLower());
+        const isSpecificPageRequested = @(Model.IsSpecificPageRequested.ToString().ToLower());
+        const contentLoadedSuccessfully = @(Model.ContentLoadedSuccessfully.ToString().ToLower());
+        
+        console.log('Page initialization:', {
+            currentPage,
+            hasGeneratedContent,
+            isSpecificPageRequested,
+            contentLoadedSuccessfully
+        });
+        
+        if (currentPage && hasGeneratedContent) {
+            if (isSpecificPageRequested && contentLoadedSuccessfully) {
+                // Server successfully loaded the specific page content
+                // Just update the history state to enable proper navigation
+                window.history.replaceState({ page: currentPage }, document.title, window.location.href);
+                console.log('Server-rendered content detected, history state updated');
+            } else if (isSpecificPageRequested && !contentLoadedSuccessfully) {
+                // Server tried to load specific page but failed, try AJAX
+                console.log('Server failed to load content, trying AJAX...');
+                loadWikiPage(currentPage, false);
+            } else {
+                // No specific page was requested on server side, but we have one in URL - load via AJAX
+                console.log('Loading page via AJAX...');
+                loadWikiPage(currentPage, false);
             }
         }
-        
-        // Initialize and set up resize listener
-        updateIframeSize();
-        window.addEventListener('resize', updateIframeSize);
-        
-        // Simple iframe refresh function
-        window.refreshIframeContent = function() {
-            const iframe = document.getElementById('wiki-preview-frame');
+    });
+
+    function setupWikiNavigation() {
+        // Delegate event handling for dynamically loaded content
+        document.addEventListener('click', function(event) {
+            const target = event.target.closest('a[data-wiki-page]');
+            if (target) {
+                event.preventDefault();
+                const page = target.getAttribute('data-wiki-page');
+                
+                // Try AJAX navigation first, fall back to normal navigation if it fails
+                loadWikiPage(decodeURIComponent(page)).catch(() => {
+                    console.warn('AJAX navigation failed for page:', page, 'falling back to normal navigation');
+                    // Fallback to normal navigation
+                    const originalHref = target.getAttribute('href');
+                    if (originalHref && originalHref !== '#') {
+                        window.location.href = originalHref;
+                    }
+                });
+            }
+        });
+    }
+
+    function loadWikiPage(page, updateUrl = true) {
+        return new Promise((resolve, reject) => {
+            const contentContainer = document.getElementById('wiki-content-container');
             const loadingOverlay = document.getElementById('wiki-loading-overlay');
             
-            if (iframe && loadingOverlay) {
-                // Show loading overlay
-                loadingOverlay.classList.remove('d-none');
-                iframe.classList.add('loading');
-                
-                // Get current theme from cookie or default
-                const theme = document.documentElement.getAttribute('data-theme') || 'light';
-                
-                // Force reload iframe with timestamp
-                const newSrc = `/wiki-embed?theme=${theme}&t=${Date.now()}`;
-                iframe.src = newSrc;
-                
-                // Hide loading when iframe loads
-                iframe.onload = function() {
-                    loadingOverlay.classList.add('d-none');
-                    iframe.classList.remove('loading');
-                };
-                
-                return true;
+            if (!contentContainer || !loadingOverlay) {
+                console.error('Missing required DOM elements for wiki navigation');
+                reject(new Error('Missing required DOM elements'));
+                return;
             }
-            return false;
-        };
+            
+            // Show loading overlay
+            loadingOverlay.classList.remove('d-none');
+            
+            // Make AJAX request to load content
+            const url = `/?handler=Content&page=${encodeURIComponent(page)}`;
+            
+            fetch(url, {
+                method: 'GET',
+                headers: {
+                    'RequestVerificationToken': document.querySelector('input[name="__RequestVerificationToken"]')?.value || '',
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    // Update content
+                    contentContainer.innerHTML = data.content;
+                    
+                    // Update page title
+                    document.title = data.title;
+                    
+                    // Update URL without page reload
+                    if (updateUrl) {
+                        const newUrl = page ? `/?page=${encodeURIComponent(page)}` : '/';
+                        window.history.pushState({ page: page }, data.title, newUrl);
+                    }
+                    
+                    // Scroll to top
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                    
+                    resolve(data);
+                } else {
+                    console.error('Server returned failure for page:', page, 'Message:', data.message || 'Unknown error');
+                    contentContainer.innerHTML = `<div class="alert alert-danger">Failed to load content: ${data.message || 'Unknown error'}</div>`;
+                    reject(new Error(data.message || 'Server returned failure'));
+                }
+            })
+            .catch(error => {
+                console.error('Error loading wiki content for page:', page, error);
+                contentContainer.innerHTML = '<div class="alert alert-danger">Error loading content. Please check your connection and try again.</div>';
+                reject(error);
+            })
+            .finally(() => {
+                // Hide loading overlay
+                loadingOverlay.classList.add('d-none');
+            });
+        });
+    }
+
+    function refreshWikiContent() {
+        const refreshButton = document.getElementById('refreshButton');
+        const refreshIcon = document.getElementById('refreshIcon');
+        
+        if (!refreshButton || !refreshIcon) return;
+        
+        // Disable button and add spinning animation
+        refreshButton.disabled = true;
+        refreshIcon.classList.add('spinning');
+        
+        // Get current page from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const currentPage = urlParams.get('page') || '';
+        
+        // Reload current page
+        loadWikiPage(currentPage, false);
+        
+        // Re-enable button after a delay
+        setTimeout(() => {
+            refreshButton.disabled = false;
+            refreshIcon.classList.remove('spinning');
+        }, 1000);
+    }
+
+    // Handle browser back/forward buttons
+    window.addEventListener('popstate', function(event) {
+        const page = event.state?.page || new URLSearchParams(window.location.search).get('page') || '';
+        loadWikiPage(page, false);
     });
+    
+    // Global refresh function for external calls
+    window.refreshWikiContent = refreshWikiContent;
+    
+    // Debug helper functions
+    window.testDiagnostics = function() {
+        console.log('Testing diagnostics endpoint...');
+        fetch('/?handler=Diagnostics')
+            .then(response => response.json())
+            .then(data => {
+                console.log('Diagnostics result:', data);
+                alert('Diagnostics completed - check console for details');
+            })
+            .catch(error => {
+                console.error('Diagnostics error:', error);
+                alert('Diagnostics failed - check console for details');
+            });
+    };
+    
+    window.testContentLoad = function(page = 'index.html') {
+        console.log(`Testing content load for page: ${page}`);
+        fetch(`/?handler=Content&page=${encodeURIComponent(page)}`)
+            .then(response => response.json())
+            .then(data => {
+                console.log('Content load result:', data);
+                alert(`Content load completed for ${page} - check console for details`);
+            })
+            .catch(error => {
+                console.error('Content load error:', error);
+                alert('Content load failed - check console for details');
+            });
+    };
+    
+    console.log('Wiki navigation initialized. Debug functions available:');
+    console.log('- testDiagnostics() - Test diagnostics endpoint');
+    console.log('- testContentLoad(page) - Test content loading for a specific page');
 </script>
