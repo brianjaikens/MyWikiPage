@@ -139,3 +139,49 @@ body{margin:0;font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, "
 .btn:focus,.form-control:focus{outline:3px solid rgba(111,197,238,0.18);outline-offset:2px}
 
 /* End of theme */
+
+/* Navbar layout fixes: ensure horizontal menu at small+ sizes */
+@media (min-width: 576px) {
+  .navbar-nav {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center;
+  }
+  .navbar-nav .nav-item + .nav-item {
+    margin-left: 0.75rem;
+  }
+  .navbar-nav .nav-link {
+    padding: 0.5rem 0.75rem;
+  }
+
+  /* Prevent the navbar row from wrapping so brand, nav, and actions stay on one line */
+  .navbar .row {
+    flex-wrap: nowrap;
+  }
+
+  /* Make the center column shrink as needed and let collapse display flex for alignment */
+  .navbar .col {
+    min-width: 0;
+  }
+  .navbar .collapse {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+/* Ensure toggler remains visible on small screens */
+.navbar-toggler { border-color: rgba(255,255,255,0.08); }
+.navbar-toggler-icon { filter: invert(1) opacity(0.9); },
+
+/* Keep nav when collapsed stacked with spacing */
+@media (max-width: 575.98px) {
+  .navbar-nav { flex-direction: column !important; gap: 0.35rem; }
+  .navbar-nav .nav-link { padding: 0.5rem 0.75rem; }
+
+  /* Allow wrap on small screens so collapsed menu stacks naturally */
+  .navbar .row {
+    flex-wrap: wrap;
+  }
+  .navbar .collapse { display: block !important; }
+}

@@ -1,0 +1,247 @@
+@page
+@model WebGrabber.Pages.IndexModel
+@{
+    ViewData["Title"] = "Web Grabber";
+}
+
+<!-- Include site theme (shared) -->
+<link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+
+<div class="container py-4">
+    <div class="site-hero mb-4">
+        <div class="hero-inner container">
+            <div class="row justify-content-center">
+                <div class="col-md-10">
+                    <div class="row align-items-center">
+                        <div class="col-md-8">
+                            <div class="site-brand">Web Grabber</div>
+                            <div class="site-tagline">Crawl sites and generate markdown pages with images</div>
+                        </div>
+                        <div class="col-md-4 text-md-end mt-3 mt-md-0">
+                            <span class="badge badge-accent p-2">Background Worker</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4 justify-content-center">
+        <div class="col-lg-8">
+            <div class="panel">
+                <h3 class="panel-title">Start a Crawl</h3>
+                <div class="panel-body p-3">
+                    <form id="grabForm" method="post">
+                        @Html.AntiForgeryToken()
+
+                        <div id="status" style="display:none;margin-bottom:12px;"></div>
+
+                        <!-- Horizontal form layout: labels in one column, inputs in another -->
+
+                        <div class="row mb-3 align-items-center">
+                            <label for="startUrl" class="col-sm-4 col-form-label text-sm-end">Start URL</label>
+                            <div class="col-sm-8">
+                                <div class="input-group">
+                                    <span class="input-group-text"><i class="bi bi-globe2"></i></span>
+                                    <input type="url" class="form-control py-2" id="startUrl" name="StartUrl" placeholder="https://example.com" value="https://subnautica.fandom.com/wiki/Subnautica_Wiki" required />
+                                </div>
+                                <div class="form-text">Enter the starting page to crawl. Only pages on the same host will be followed unless configured.</div>
+                            </div>
+                        </div>
+
+                        <div class="row mb-3 align-items-center">
+                            <label for="maxPages" class="col-sm-4 col-form-label text-sm-end">Max Pages</label>
+                            <div class="col-sm-8">
+                                <input type="number" class="form-control py-2" id="maxPages" name="MaxPages" value="@Model.MaxPages" min="1" />
+                            </div>
+                        </div>
+
+                        <div class="row mb-3 align-items-center">
+                            <label for="markdownFolder" class="col-sm-4 col-form-label text-sm-end">Markdown Folder</label>
+                            <div class="col-sm-8">
+                                <input type="text" class="form-control py-2" id="markdownFolder" name="MarkdownFolder" value="@Model.MarkdownFolder" />
+                            </div>
+                        </div>
+
+                        <div class="row mb-3 align-items-center">
+                            <label for="baseUrl" class="col-sm-4 col-form-label text-sm-end">Base URL for markdown links</label>
+                            <div class="col-sm-8">
+                                <input type="text" class="form-control py-2" id="baseUrl" name="BaseUrl" value="@Model.BaseUrl" />
+                            </div>
+                        </div>
+
+                        <div class="row mb-0 align-items-center">
+                            <div class="col-sm-4"></div>
+                            <div class="col-sm-8 d-flex align-items-center">
+                                <button type="submit" class="btn btn-primary me-2">Start Grab (background)</button>
+                                <button type="button" class="btn btn-outline-primary ms-1" id="openConfig"><i class="bi bi-gear me-1"></i> Config</button>
+                                <div class="ms-auto text-muted small">Last run: <span id="lastRun">@Model.LastRun</span></div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div class="panel mt-4">
+                <h4 class="panel-title">Activity Log</h4>
+                <pre id="log" style="height:320px;overflow:auto;margin:0;background:transparent;border:none;padding:0;">@Model.InitialLog</pre>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="widget panel panel-accent mb-3">
+                <h4>Status</h4>
+                <div class="item"><strong>Queued:</strong> <span id="queuedCount">@Model.QueuedCount</span></div>
+                <div class="item"><strong>Running:</strong> <span id="runningCount">@Model.RunningCount</span></div>
+                <div class="item"><strong>Completed:</strong> <span id="completedCount">@Model.CompletedCount</span></div>
+            </div>
+
+            <div class="widget panel mb-3">
+                <h4>Options</h4>
+                <div class="item">User-Agent: <strong>@Model.UserAgent</strong></div>
+                <div class="item">External Images: <strong>@(Model.AllowExternalImages ? "Allowed" : "Blocked")</strong></div>
+            </div>
+
+            <div class="widget panel">
+                <h4>Quick Actions</h4>
+                <div class="d-grid gap-2">
+                    <button class="btn btn-accent" id="quickRefresh">Refresh List</button>
+                    <button class="btn btn-outline-primary" id="downloadMd">Download Markdown</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Config modal -->
+<div class="modal fade" id="configModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Configuration</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <form id="configForm">
+          <div class="row mb-3 align-items-center">
+            <label class="col-sm-4 col-form-label text-sm-end">User-Agent</label>
+            <div class="col-sm-8">
+              <input class="form-control py-2" id="userAgent" name="UserAgent" value="@Model.UserAgent" />
+            </div>
+          </div>
+          <div class="row mb-0 align-items-center">
+            <label class="col-sm-4 col-form-label text-sm-end">Follow External Image Host</label>
+            <div class="col-sm-8">
+              <select class="form-select py-2" id="allowExternalImages" name="AllowExternalImages">
+                <option value="false" @(Model.AllowExternalImages ? "" : "selected")>No</option>
+                <option value="true" @(Model.AllowExternalImages ? "selected" : "")>Yes</option>
+              </select>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-primary" id="saveConfig">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+@section Scripts {
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.getElementById('openConfig').addEventListener('click', () => {
+            var modal = new bootstrap.Modal(document.getElementById('configModal'));
+            modal.show();
+        });
+
+        document.getElementById('saveConfig').addEventListener('click', () => {
+            var modal = bootstrap.Modal.getInstance(document.getElementById('configModal'));
+            modal.hide();
+        });
+
+        // Connect to SSE
+        (function() {
+            var evtSource = new EventSource('/sse/logs');
+            var log = document.getElementById('log');
+            evtSource.onmessage = function(e) {
+                if (!log) return;
+                log.innerText += (log.innerText ? '\n' : '') + e.data;
+                log.scrollTop = log.scrollHeight;
+            };
+            evtSource.onerror = function(e) {
+                console.error('SSE error', e);
+                evtSource.close();
+            };
+        })();
+
+        document.getElementById('grabForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            var form = e.target;
+            var data = new FormData(form);
+
+            var response;
+            try {
+                response = await fetch('', { method: 'POST', body: data, headers: { 'Accept': 'application/json' } });
+            } catch (err) {
+                console.error('Network error:', err);
+                alert('Network error while submitting form');
+                return;
+            }
+
+            var result = null;
+            if (!response.ok) {
+                // Try to read text and show status
+                var txt = await response.text().catch(() => '');
+                console.error('Server returned non-OK status', response.status, txt);
+                alert('Server error: ' + response.status + (txt ? '\n' + txt : ''));
+                return;
+            }
+
+            try {
+                // Some servers may return an empty body; guard against that
+                var contentType = response.headers.get('content-type');
+                if (contentType && contentType.indexOf('application/json') !== -1) {
+                    result = await response.json();
+                } else {
+                    // attempt to parse; if empty, fallback
+                    var text = await response.text();
+                    if (text && text.trim().length > 0) {
+                        try { result = JSON.parse(text); } catch { result = null; }
+                    }
+                }
+            } catch (err) {
+                console.error('Failed to parse JSON response', err);
+            }
+
+            var status = document.getElementById('status');
+            if (status) status.style.display = 'block';
+
+            if (result && result.success) {
+                if (status) {
+                    status.className = 'alert alert-success';
+                    status.innerText = result.message || 'Job queued';
+                    if (result.folder) {
+                        status.innerText += '\nSaved pages will be placed in: ' + result.folder;
+                    }
+                }
+            } else {
+                if (status) {
+                    status.className = 'alert alert-danger';
+                    status.innerText = (result && result.message) ? ('Failed to enqueue: ' + result.message) : 'Failed to enqueue: Unknown';
+                }
+            }
+        });
+
+        // Quick actions
+        document.getElementById('quickRefresh').addEventListener('click', async () => {
+            // trigger a refresh action on the page
+            window.location.reload();
+        });
+
+        document.getElementById('downloadMd').addEventListener('click', () => {
+            alert('Download functionality not implemented yet');
+        });
+    </script>
+}

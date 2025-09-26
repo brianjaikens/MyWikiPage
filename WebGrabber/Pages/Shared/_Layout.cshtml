@@ -1,0 +1,90 @@
+@namespace WebGrabber.Pages
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] - WebGrabber</title>
+    <!-- Prefer local lib assets when available; fall back to CDN if needed -->
+    <link rel="stylesheet" href="~/lib/bootstrap/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/lib/bootstrap-icons/font/bootstrap-icons.css" />
+</head>
+<body>
+    <header>
+        <nav class="navbar navbar-expand-lg navbar-dark">
+            <div class="container">
+                <div class="row w-100 align-items-center gx-3">
+                    <div class="col-auto d-flex align-items-center">
+                        <a class="navbar-brand" asp-page="/Index">WebGrabber</a>
+                        <button class="navbar-toggler ms-2" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav" aria-controls="#mainNav" aria-expanded="false" aria-label="Toggle navigation">
+                            <span class="navbar-toggler-icon"></span>
+                        </button>
+                    </div>
+
+                    <div class="col">
+                        <div class="collapse navbar-collapse" id="mainNav">
+                            <ul class="navbar-nav justify-content-center mb-2 mb-lg-0 w-100">
+                                <li class="nav-item"><a class="nav-link" asp-page="/Index">Home</a></li>
+                                <li class="nav-item"><a class="nav-link" asp-page="/Wiki">Wiki</a></li>
+                                <li class="nav-item"><a class="nav-link" asp-page="/About">About</a></li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="col-auto">
+                        <div class="d-flex align-items-center justify-content-end">
+                            <a class="btn btn-sm btn-outline-light me-2" asp-page="/Index"><i class="bi bi-arrow-repeat"></i> Refresh</a>
+                            <div class="btn-group me-2" role="group" aria-label="Theme">
+                                <button type="button" class="btn btn-outline-light btn-sm theme-toggle" data-theme="light" title="Light"><i class="bi bi-sun"></i></button>
+                                <button type="button" class="btn btn-outline-light btn-sm theme-toggle" data-theme="dark" title="Dark"><i class="bi bi-moon"></i></button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        @if (IsSectionDefined("Hero")) {
+            @RenderSection("Hero")
+        }
+    </header>
+
+    <main class="py-4">
+        <div class="container">
+            @RenderBody()
+        </div>
+    </main>
+
+    <footer class="footer mt-auto py-3">
+        <div class="container text-center">
+            <small>&copy; @DateTime.Now.Year - WebGrabber</small>
+        </div>
+    </footer>
+
+    <!-- Prefer local bootstrap bundle; fallback to CDN if not available -->
+    <script src="~/lib/bootstrap/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        // Theme Management (simple)
+        function initializeTheme() {
+            const saved = localStorage.getItem('theme') || 'dark';
+            setTheme(saved);
+        }
+        function setTheme(theme) {
+            document.documentElement.setAttribute('data-theme', theme);
+            localStorage.setItem('theme', theme);
+            document.querySelectorAll('.theme-toggle').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.theme === theme);
+            });
+        }
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeTheme();
+            document.querySelectorAll('.theme-toggle').forEach(btn => btn.addEventListener('click', () => setTheme(btn.dataset.theme)));
+        });
+    </script>
+
+    @RenderSection("Scripts", required: false)
+</body>
+</html>
