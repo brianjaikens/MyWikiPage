@@ -7,4 +7,6 @@ public class WebGrabSettings
     public string MarkdownFolder { get; set; } = "GrabbedPages";
     public string BaseUrl { get; set; } = "/";
     public int MaxPages { get; set; } = 20;
+    public string StartUrl { get; set; } = "https://subnautica.fandom.com/wiki/Subnautica";
+    public int CrawlLimit { get; set; } = 500;
 }

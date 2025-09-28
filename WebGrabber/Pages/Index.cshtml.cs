@@ -12,13 +12,15 @@ public class IndexModel : PageModel
     private readonly IBackgroundJobQueue _queue;
     private readonly WebGrabSettings _settings;
     private readonly IWebHostEnvironment _env;
+    private readonly JobStateService _jobState;
 
-    public IndexModel(IWebGrabService grabService, IBackgroundJobQueue queue, IOptions<WebGrabSettings> settings, IWebHostEnvironment env)
+    public IndexModel(IWebGrabService grabService, IBackgroundJobQueue queue, IOptions<WebGrabSettings> settings, IWebHostEnvironment env, JobStateService jobState)
     {
         _grabService = grabService;
         _queue = queue;
         _settings = settings.Value;
         _env = env;
+        _jobState = jobState;
     }
 
     [BindProperty]
@@ -33,6 +35,8 @@ public class IndexModel : PageModel
     public string UserAgent { get; set; } = string.Empty;
     [BindProperty]
     public bool AllowExternalImages { get; set; }
+    [BindProperty]
+    public int CrawlLimit { get; set; }
 
     // Presentation properties for the UI (safe defaults)
     public string LastRun { get; set; } = "Never";
@@ -40,15 +44,24 @@ public class IndexModel : PageModel
     public int QueuedCount { get; set; } = 0;
     public int RunningCount { get; set; } = 0;
     public int CompletedCount { get; set; } = 0;
+    public int PagesFound { get; set; } = 0;
+
+    // Job state display
+    public bool IsJobRunning => _jobState.IsRunning;
+    public int? LastDiscoveryCount => _jobState.LastDiscoveryCount;
+    public DateTime? LastDiscoveryTime => _jobState.LastDiscoveryTime;
+    public string? LastDiscoveryUrl => _jobState.LastDiscoveryUrl;
 
     public void OnGet()
     {
         // load persisted defaults
+        StartUrl = _settings.StartUrl;
         MaxPages = _settings.MaxPages;
         MarkdownFolder = _settings.MarkdownFolder;
         BaseUrl = _settings.BaseUrl;
         UserAgent = _settings.UserAgent;
         AllowExternalImages = _settings.AllowExternalImages;
+        CrawlLimit = _settings.CrawlLimit;
 
         // Optionally populate presentation properties from any background queue/service in future
     }
@@ -57,12 +70,13 @@ public class IndexModel : PageModel
     {
         var config = new WebGrabConfig
         {
-            StartUrl = StartUrl,
+            StartUrl = string.IsNullOrWhiteSpace(StartUrl) ? _settings.StartUrl : StartUrl,
             MaxPages = MaxPages > 0 ? MaxPages : _settings.MaxPages,
             MarkdownFolder = string.IsNullOrWhiteSpace(MarkdownFolder) ? _settings.MarkdownFolder : MarkdownFolder,
             BaseUrl = string.IsNullOrWhiteSpace(BaseUrl) ? _settings.BaseUrl : BaseUrl,
             UserAgent = string.IsNullOrWhiteSpace(UserAgent) ? _settings.UserAgent : UserAgent,
-            AllowExternalImages = AllowExternalImages
+            AllowExternalImages = AllowExternalImages,
+            CrawlLimit = CrawlLimit > 0 ? CrawlLimit : _settings.CrawlLimit
         };
 
         // Enqueue background job

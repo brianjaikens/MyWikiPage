@@ -2,18 +2,21 @@ using HtmlAgilityPack;
 using ReverseMarkdown;
 using System.Text;
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.Logging;
 
 namespace WebGrabber.Services;
 
 public class WebGrabService : IWebGrabService
 {
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly ILogger<WebGrabService> _logger;
     private readonly List<string> _log = new();
     private readonly HashSet<string> _visited = new(StringComparer.OrdinalIgnoreCase);
 
-    public WebGrabService(IHttpClientFactory httpClientFactory)
+    public WebGrabService(IHttpClientFactory httpClientFactory, ILogger<WebGrabService> logger)
     {
         _httpClientFactory = httpClientFactory;
+        _logger = logger;
     }
 
     public async System.Threading.Tasks.Task<WebGrabResult> GrabSiteAsync(WebGrabConfig config, IProgress<string>? progress = null, System.Threading.CancellationToken cancellationToken = default)
@@ -21,33 +24,162 @@ public class WebGrabService : IWebGrabService
         _log.Clear();
         _visited.Clear();
 
+        _logger.LogDebug("Starting GrabSiteAsync. DiscoverOnly={DiscoverOnly}, StartUrl={StartUrl}, MaxPages={MaxPages}, CrawlLimit={CrawlLimit}", config.DiscoverOnly, config.StartUrl, config.MaxPages, config.CrawlLimit);
+
         if (!Uri.TryCreate(config.StartUrl, UriKind.Absolute, out var startUri))
         {
+            _logger.LogWarning("Invalid start URL provided: {StartUrl}", config.StartUrl);
             return new WebGrabResult(false, "Invalid start URL", _log);
         }
 
-        // Ensure markdown folder is relative to app if not absolute
-        var markdownFolder = config.MarkdownFolder;
-        if (!Path.IsPathRooted(markdownFolder))
+        // For discovery-only runs we don't create folders or save files
+        var requestedMarkdownFolder = config.MarkdownFolder ?? string.Empty;
+        string markdownFolder = requestedMarkdownFolder;
+        if (!config.DiscoverOnly)
         {
-            markdownFolder = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, markdownFolder));
-        }
+            if (!Path.IsPathRooted(markdownFolder))
+            {
+                markdownFolder = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, markdownFolder ?? string.Empty));
+            }
 
-        Directory.CreateDirectory(markdownFolder);
-        Directory.CreateDirectory(Path.Combine(markdownFolder, "images"));
+            Directory.CreateDirectory(markdownFolder);
+            Directory.CreateDirectory(Path.Combine(markdownFolder, "images"));
+        }
 
         var toVisit = new Queue<Uri>();
         toVisit.Enqueue(startUri);
         _visited.Add(startUri.AbsoluteUri);
 
         var client = _httpClientFactory.CreateClient();
-        client.DefaultRequestHeaders.UserAgent.ParseAdd(config.UserAgent);
+        try
+        {
+            if (!string.IsNullOrEmpty(config.UserAgent))
+            {
+                client.DefaultRequestHeaders.UserAgent.ParseAdd(config.UserAgent);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to set User-Agent header: {Agent}", config.UserAgent);
+        }
 
         var converter = new Converter(new Config());
 
         // Counters to number images per page (keyed by page file name)
         var imageCounters = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        // Map of original image URL (or data URI) -> saved relative path to avoid duplicate downloads
+        var imageMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
+        // Determine base URL prefix to decide which links to keep
+        Uri baseUri;
+        var baseUrlCandidate = config.BaseUrl ?? string.Empty;
+        if (!Uri.TryCreate(baseUrlCandidate, UriKind.Absolute, out var parsed) || parsed == null)
+        {
+            // fallback to site root from startUri
+            baseUri = new Uri(startUri.GetLeftPart(UriPartial.Authority));
+        }
+        else
+        {
+            baseUri = parsed;
+        }
+        var basePrefix = baseUri.AbsoluteUri.TrimEnd('/');
+
+        _logger.LogDebug("BasePrefix set to {BasePrefix}", basePrefix);
+
+        // Helper to map a saved relative image path to a URL under the configured BaseUrl
+        static string MapSavedImageToUrl(string candidate, string basePrefix)
+        {
+            if (string.IsNullOrWhiteSpace(candidate)) return candidate;
+            var rel = candidate.Replace('\\', '/').TrimStart('/');
+            return rel;
+        }
+
+        // Discovery-only mode: lightweight crawl that only counts pages and does not save content
+        if (config.DiscoverOnly)
+        {
+            _logger.LogInformation("Running discovery-only crawl for {StartUrl}", startUri);
+            int pagesFound = _visited.Count;
+            progress?.Report($"Pages found: {pagesFound}");
+
+            while (toVisit.Count > 0 && _visited.Count < config.CrawlLimit)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var uri = toVisit.Dequeue();
+                _log.Add($"Visiting: {uri}");
+                progress?.Report($"Visiting: {uri}");
+                _logger.LogDebug("Discovery visiting {Uri}", uri);
+
+                try
+                {
+                    var resp = await client.GetAsync(uri, cancellationToken);
+                    _logger.LogDebug("HTTP GET {Uri} -> {StatusCode}", uri, resp.StatusCode);
+                    if (!resp.IsSuccessStatusCode)
+                    {
+                        _log.Add($"Failed to get {uri}: {resp.StatusCode}");
+                        progress?.Report($"Failed to get {resp.StatusCode}");
+                        continue;
+                    }
+
+                    var html = await resp.Content.ReadAsStringAsync(cancellationToken);
+                    _logger.LogTrace("Fetched {Bytes} bytes from {Uri}", html?.Length ?? 0, uri);
+                    var doc = new HtmlDocument();
+                    doc.LoadHtml(html);
+
+                    // Find links to other pages within same base URL
+                    var anchors = doc.DocumentNode.SelectNodes("//a[@href]") ?? Enumerable.Empty<HtmlNode>();
+                    foreach (var a in anchors.ToList())
+                    {
+                        var href = a.GetAttributeValue("href", "");
+                        if (string.IsNullOrEmpty(href)) continue;
+                        if (href.StartsWith("#")) continue;
+
+                        if (!Uri.TryCreate(uri, href, out var link)) continue;
+
+                        var linkAbs = link.AbsoluteUri;
+
+                        // Only allow non-image links that are under the configured BaseUrl
+                        var linkAbsTrim = linkAbs.TrimEnd('/');
+                        if (!(string.Equals(linkAbsTrim, basePrefix, StringComparison.OrdinalIgnoreCase) ||
+                              linkAbsTrim.StartsWith(basePrefix + "/", StringComparison.OrdinalIgnoreCase)))
+                        {
+                            _logger.LogTrace("Skipping external link {Link}", linkAbs);
+                            continue;
+                        }
+
+                        if (!_visited.Contains(link.AbsoluteUri) && _visited.Count < config.CrawlLimit)
+                        {
+                            _visited.Add(link.AbsoluteUri);
+                            toVisit.Enqueue(link);
+                            pagesFound = _visited.Count;
+                            progress?.Report($"Pages found: {pagesFound}");
+                            _logger.LogDebug("Discovered internal page {Link} (total {Count})", linkAbs, pagesFound);
+                        }
+                    }
+
+                    _log.Add($"Discovered page: {uri}");
+                    progress?.Report($"Discovered page: {uri}");
+                }
+                catch (OperationCanceledException)
+                {
+                    _log.Add("Operation cancelled");
+                    _logger.LogInformation("Discovery cancelled for {Uri}", uri);
+                    return new WebGrabResult(false, "Cancelled", _log);
+                }
+                catch (Exception ex)
+                {
+                    _log.Add($"Error visiting {uri}: {ex.Message}");
+                    progress?.Report($"Error visiting {uri}: {ex.Message}");
+                    _logger.LogWarning(ex, "Error while discovering {Uri}", uri);
+                }
+            }
+
+            progress?.Report($"Pages found: {_visited.Count}");
+            _logger.LogInformation("Discovery completed. Pages found: {Count}", _visited.Count);
+            return new WebGrabResult(true, "Discovery completed", _log);
+        }
+
+        // Full grab mode: process pages, save images and markdown
         while (toVisit.Count > 0 && _visited.Count <= config.MaxPages)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -55,10 +187,12 @@ public class WebGrabService : IWebGrabService
             var uri = toVisit.Dequeue();
             _log.Add($"Visiting: {uri}");
             progress?.Report($"Visiting: {uri}");
+            _logger.LogInformation("Processing page {Uri}", uri);
 
             try
             {
                 var resp = await client.GetAsync(uri, cancellationToken);
+                _logger.LogDebug("HTTP GET {Uri} -> {StatusCode}", uri, resp.StatusCode);
                 if (!resp.IsSuccessStatusCode)
                 {
                     _log.Add($"Failed to get {uri}: {resp.StatusCode}");
@@ -67,6 +201,7 @@ public class WebGrabService : IWebGrabService
                 }
 
                 var html = await resp.Content.ReadAsStringAsync(cancellationToken);
+                _logger.LogTrace("Fetched {Bytes} bytes from {Uri}", html?.Length ?? 0, uri);
                 var doc = new HtmlDocument();
                 doc.LoadHtml(html);
 
@@ -74,7 +209,7 @@ public class WebGrabService : IWebGrabService
                 var scriptsAndStyles = doc.DocumentNode.SelectNodes("//script|//style") ?? Enumerable.Empty<HtmlNode>();
                 foreach (var node in scriptsAndStyles.ToList())
                 {
-                    try { node.Remove(); } catch { }
+                    try { node.Remove(); } catch (Exception ex) { _logger.LogDebug(ex, "Failed to remove script/style node"); }
                 }
 
                 // Remove inline event handler attributes (onclick, onmouseover, etc.) and javascript: hrefs
@@ -84,19 +219,19 @@ public class WebGrabService : IWebGrabService
                     var attrsToRemove = node.Attributes.Where(a => a.Name.StartsWith("on", StringComparison.OrdinalIgnoreCase)).Select(a => a.Name).ToList();
                     foreach (var name in attrsToRemove)
                     {
-                        try { node.Attributes.Remove(name); } catch { }
+                        try { node.Attributes.Remove(name); } catch (Exception ex) { _logger.LogDebug(ex, "Failed to remove attribute {Attr} on node {Node}", name, node.Name); }
                     }
 
                     var hrefAttr = node.Attributes["href"];
                     if (hrefAttr != null && !string.IsNullOrWhiteSpace(hrefAttr.Value) && hrefAttr.Value.TrimStart().StartsWith("javascript:", StringComparison.OrdinalIgnoreCase))
                     {
-                        try { node.Attributes.Remove("href"); } catch { }
+                        try { node.Attributes.Remove("href"); } catch (Exception ex) { _logger.LogDebug(ex, "Failed to remove javascript: href attribute"); }
                     }
 
                     var srcAttr = node.Attributes["src"];
                     if (srcAttr != null && !string.IsNullOrWhiteSpace(srcAttr.Value) && srcAttr.Value.TrimStart().StartsWith("javascript:", StringComparison.OrdinalIgnoreCase))
                     {
-                        try { node.Attributes.Remove("src"); } catch { }
+                        try { node.Attributes.Remove("src"); } catch (Exception ex) { _logger.LogDebug(ex, "Failed to remove javascript: src attribute"); }
                     }
                 }
 
@@ -114,6 +249,30 @@ public class WebGrabService : IWebGrabService
                     var src = img.GetAttributeValue("src", "");
                     var dataSrc = img.GetAttributeValue("data-src", "");
                     var srcset = img.GetAttributeValue("srcset", "");
+
+                    // If any of the image sources are data URIs (embedded/base64), skip the entire image element
+                    bool HasDataUriInSrcset(string s)
+                    {
+                        if (string.IsNullOrEmpty(s)) return false;
+                        var parts = s.Split(',').Select(p => p.Trim()).Where(p => p.Length > 0);
+                        foreach (var part in parts)
+                        {
+                            var spaceIdx = part.IndexOf(' ');
+                            var urlPart = spaceIdx > 0 ? part.Substring(0, spaceIdx) : part;
+                            if (urlPart.StartsWith("data:", StringComparison.OrdinalIgnoreCase)) return true;
+                        }
+                        return false;
+                    }
+
+                    if (!string.IsNullOrEmpty(src) && src.StartsWith("data:", StringComparison.OrdinalIgnoreCase)
+                        || !string.IsNullOrEmpty(dataSrc) && dataSrc.StartsWith("data:", StringComparison.OrdinalIgnoreCase)
+                        || HasDataUriInSrcset(srcset))
+                    {
+                        // remove the image element entirely and do not convert it to markdown
+                        try { img.Remove(); } catch (Exception ex) { _logger.LogDebug(ex, "Failed to remove data-uri image node"); }
+                        _logger.LogDebug("Skipped embedded data-uri image on {Page}", uri);
+                        continue;
+                    }
 
                     // attempt to get helpful metadata for filename
                     var altText = img.GetAttributeValue("alt", "").Trim();
@@ -139,56 +298,12 @@ public class WebGrabService : IWebGrabService
                     {
                         if (string.IsNullOrWhiteSpace(imgUrl)) return null;
 
-                        // Handle data URIs (data:image/png;base64,...)
+                        // Do not attempt to save embedded/data URI images; skip them
                         if (imgUrl.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
                         {
-                            try
-                            {
-                                var comma = imgUrl.IndexOf(',');
-                                if (comma < 0) return null;
-                                var meta = imgUrl.Substring(5, comma - 5); // skip "data:"
-                                var isBase64 = meta.EndsWith(";base64", StringComparison.OrdinalIgnoreCase);
-                                // extract mime type if present (e.g. image/png)
-                                var mime = meta.Split(';').FirstOrDefault() ?? string.Empty;
-
-                                // map mime to extension
-                                string? extFromMeta = mime.ToLowerInvariant() switch
-                                {
-                                    "image/png" => ".png",
-                                    "image/jpeg" => ".jpg",
-                                    "image/jpg" => ".jpg",
-                                    "image/gif" => ".gif",
-                                    "image/webp" => ".webp",
-                                    "image/svg+xml" => ".svg",
-                                    "image/x-icon" => ".ico",
-                                    "image/vnd.microsoft.icon" => ".ico",
-                                    _ => null
-                                };
-
-                                var payload = imgUrl.Substring(comma + 1);
-                                byte[] imgBytes = isBase64 ? Convert.FromBase64String(payload) : Encoding.UTF8.GetBytes(Uri.UnescapeDataString(payload));
-
-                                // Generate a meaningful filename: pageBaseName-image-N.ext
-                                imageCounters[pageBaseName]++;
-                                var idx = imageCounters[pageBaseName];
-                                var fileName = $"{pageBaseName}-image-{idx}" + (extFromMeta ?? ".bin");
-
-                                // sanitize filename to remove invalid chars
-                                fileName = SanitizeName(fileName);
-
-                                var unique = MakeUniqueFile(Path.Combine(markdownFolder, "images", fileName));
-                                await File.WriteAllBytesAsync(unique, imgBytes, cancellationToken);
-                                var rel = Path.GetRelativePath(markdownFolder, unique).Replace('\\','/');
-                                _log.Add($"Saved data-uri image -> {unique}");
-                                progress?.Report($"Saved data-uri image");
-                                return rel;
-                            }
-                            catch (Exception ex)
-                            {
-                                _log.Add($"Failed to save data-uri image: {ex.GetType().Name} {ex.Message}");
-                                progress?.Report($"Failed to save data-uri image: {ex.Message}");
-                                return null;
-                            }
+                            _log.Add("Skipping embedded data-uri image");
+                            _logger.LogDebug("Skipping embedded data-uri image on {Page}", uri);
+                            return null;
                         }
 
                         // Fix protocol-relative URLs (//example.com/foo)
@@ -200,7 +315,16 @@ public class WebGrabService : IWebGrabService
                         if (!Uri.TryCreate(uri, imgUrl, out var imgUri))
                         {
                             _log.Add($"Invalid image URL: {imgUrl}");
+                            _logger.LogWarning("Invalid image URL on {Page}: {ImgUrl}", uri, imgUrl);
                             return null;
+                        }
+
+                        // Use absolute URI as key to dedupe
+                        var absolute = imgUri.AbsoluteUri;
+                        if (imageMap.TryGetValue(absolute, out var existing))
+                        {
+                            _logger.LogDebug("Reusing previously saved image for {Img}", absolute);
+                            return existing;
                         }
 
                         try
@@ -211,9 +335,11 @@ public class WebGrabService : IWebGrabService
                             req.Headers.Accept.ParseAdd("*/*");
 
                             using var response = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                            _logger.LogDebug("Downloading image {Img} -> {Status}", imgUri, response.StatusCode);
                             if (!response.IsSuccessStatusCode)
                             {
                                 _log.Add($"Failed to download image {imgUri}: {response.StatusCode} {response.ReasonPhrase}");
+                                _logger.LogWarning("Failed to download image {Img}: {Status} {Reason}", imgUri, response.StatusCode, response.ReasonPhrase);
                                 return null;
                             }
 
@@ -335,8 +461,13 @@ public class WebGrabService : IWebGrabService
                             await File.WriteAllBytesAsync(unique, imgBytes, cancellationToken);
 
                             var rel = Path.GetRelativePath(markdownFolder, unique).Replace('\\','/');
+
+                            // store mapping so we don't save duplicates later
+                            imageMap[absolute] = rel;
+
                             _log.Add($"Saved image: {imgUri} -> {unique}");
                             progress?.Report($"Saved image: {imgUri}");
+                            _logger.LogInformation("Saved image {Img} -> {File}", imgUri, unique);
                             return rel;
                         }
                         catch (OperationCanceledException)
@@ -347,9 +478,13 @@ public class WebGrabService : IWebGrabService
                         {
                             _log.Add($"Failed to save image {imgUri}: {ex.GetType().Name} {ex.Message}");
                             progress?.Report($"Failed to save image {imgUri}: {ex.Message}");
+                            _logger.LogWarning(ex, "Failed to save image {ImgUri}", imgUri);
                             return null;
                         }
                     }
+
+                    // Helper to map a found saved relative path to the BaseUrl (local function uses outer basePrefix)
+                    string ToMappedUrl(string rel) => MapSavedImageToUrl(rel, basePrefix);
 
                     // Process src
                     if (!string.IsNullOrEmpty(src))
@@ -357,7 +492,7 @@ public class WebGrabService : IWebGrabService
                         var newSrc = await SaveImageUrlAsync(src);
                         if (!string.IsNullOrEmpty(newSrc))
                         {
-                            img.SetAttributeValue("src", newSrc);
+                            img.SetAttributeValue("src", ToMappedUrl(newSrc));
                         }
                     }
 
@@ -367,11 +502,11 @@ public class WebGrabService : IWebGrabService
                         var newData = await SaveImageUrlAsync(dataSrc);
                         if (!string.IsNullOrEmpty(newData))
                         {
-                            img.SetAttributeValue("data-src", newData);
+                            img.SetAttributeValue("data-src", ToMappedUrl(newData));
                             // also set src if empty
                             if (string.IsNullOrEmpty(img.GetAttributeValue("src", "")))
                             {
-                                img.SetAttributeValue("src", newData);
+                                img.SetAttributeValue("src", ToMappedUrl(newData));
                             }
                         }
                     }
@@ -391,7 +526,8 @@ public class WebGrabService : IWebGrabService
                             var newUrl = await SaveImageUrlAsync(urlPart);
                             if (!string.IsNullOrEmpty(newUrl))
                             {
-                                rewritten.Add(string.IsNullOrEmpty(descriptor) ? newUrl : (newUrl + " " + descriptor));
+                                var mapped = ToMappedUrl(newUrl);
+                                rewritten.Add(string.IsNullOrEmpty(descriptor) ? mapped : (mapped + " " + descriptor));
                             }
                         }
 
@@ -408,40 +544,131 @@ public class WebGrabService : IWebGrabService
                     }
                 }
 
-                // Find links to other pages within same domain
+                // Remove duplicate image occurrences across the document.
+                // Build a list of image occurrences (plain <img> and <a> wrapping an <img>) in document order,
+                // then for each set of occurrences with the same rewritten src keep only one.
+                var bodyNode = doc.DocumentNode.SelectSingleNode("//body") ?? doc.DocumentNode;
+                var occurrences = new List<(HtmlNode containerNode, HtmlNode imgNode, bool wrapped, string src)>();
+                var handledImgs = new HashSet<HtmlNode>();
+
+                foreach (var node in bodyNode.Descendants())
+                {
+                    if (node.NodeType != HtmlNodeType.Element) continue;
+
+                    if (string.Equals(node.Name, "a", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var innerImg = node.Descendants("img").FirstOrDefault();
+                        if (innerImg != null)
+                        {
+                            var src = innerImg.GetAttributeValue("src", "").Trim();
+                            occurrences.Add((node, innerImg, true, src));
+                            handledImgs.Add(innerImg);
+                        }
+                    }
+                    else if (string.Equals(node.Name, "img", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (handledImgs.Contains(node)) continue; // already accounted for as part of an anchor
+                        var src = node.GetAttributeValue("src", "").Trim();
+                        occurrences.Add((node, node, false, src));
+                    }
+                }
+
+                var groups = occurrences.Where(o => !string.IsNullOrEmpty(o.src)).GroupBy(o => o.src, StringComparer.OrdinalIgnoreCase);
+                foreach (var g in groups)
+                {
+                    var list = g.ToList();
+                    if (list.Count <= 1) continue;
+
+                    // Prefer the first plain <img> occurrence; otherwise keep the first occurrence.
+                    int keepIndex = list.FindIndex(x => !x.wrapped);
+                    if (keepIndex == -1) keepIndex = 0;
+                    var keep = list[keepIndex];
+
+                    for (int i = 0; i < list.Count; i++)
+                    {
+                        if (i == keepIndex) continue;
+                        var occ = list[i];
+                        try { occ.containerNode.Remove(); } catch (Exception ex) { _logger.LogDebug(ex, "Failed to remove duplicate image occurrence"); }
+                    }
+                }
+
+                // Find links to other pages within same base URL
                 var anchors = doc.DocumentNode.SelectNodes("//a[@href]") ?? Enumerable.Empty<HtmlNode>();
-                foreach (var a in anchors)
+                foreach (var a in anchors.ToList())
                 {
                     var href = a.GetAttributeValue("href", "");
                     if (string.IsNullOrEmpty(href)) continue;
                     if (href.StartsWith("#")) continue;
 
+                    // If the anchor points to a data URI image and we have it mapped, rewrite to saved image
+                    if (href.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (imageMap.TryGetValue(href, out var mappedRel))
+                        {
+                            a.SetAttributeValue("href", MapSavedImageToUrl(mappedRel, basePrefix));
+                            continue;
+                        }
+                        else
+                        {
+                            // no mapping for data URI image, remove the anchor
+                            try { a.Remove(); } catch (Exception ex) { _logger.LogDebug(ex, "Failed to remove anchor referencing data URI"); }
+                            continue;
+                        }
+                    }
+
                     if (!Uri.TryCreate(uri, href, out var link)) continue;
 
-                    // restrict to same host
-                    if (link.Host == startUri.Host)
+                    // If anchor points to an image URL we saved (even if external), rewrite to saved image
+                    var linkAbs = link.AbsoluteUri;
+                    if (imageMap.TryGetValue(linkAbs, out var imgRel))
                     {
-                        if (!_visited.Contains(link.AbsoluteUri) && _visited.Count < config.MaxPages)
-                        {
-                            _visited.Add(link.AbsoluteUri);
-                            toVisit.Enqueue(link);
-                        }
-                        // rewrite links to point to markdown files
-                        var mdName = MakeFileNameForUri(link);
-                        a.SetAttributeValue("href", Path.Combine(config.BaseUrl.TrimEnd('/'), mdName).Replace('\\','/'));
+                        a.SetAttributeValue("href", MapSavedImageToUrl(imgRel, basePrefix));
+                        continue;
                     }
+
+                    // Only allow non-image links that are under the configured BaseUrl
+                    var linkAbsTrim = linkAbs.TrimEnd('/');
+                    if (!(string.Equals(linkAbsTrim, basePrefix, StringComparison.OrdinalIgnoreCase) ||
+                          linkAbsTrim.StartsWith(basePrefix + "/", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        // remove external link and its label (do not include)
+                        try { a.Remove(); } catch (Exception ex) { _logger.LogDebug(ex, "Failed to remove external anchor"); }
+                        continue;
+                    }
+
+                    // At this point the link is accepted as internal under BaseUrl
+                    if (!_visited.Contains(link.AbsoluteUri) && _visited.Count < config.MaxPages)
+                    {
+                        _visited.Add(link.AbsoluteUri);
+                        toVisit.Enqueue(link);
+                        _logger.LogDebug("Enqueued linked page {Link}", link.AbsoluteUri);
+                    }
+
+                    // rewrite links to point to markdown files under configured BaseUrl
+                    var mdName = MakeFileNameForUri(link);
+                    // Use relative link (just the markdown filename)
+                    a.SetAttributeValue("href", mdName.Replace('\\','/'));
                 }
 
                 // Convert to markdown using ReverseMarkdown
                 var body = doc.DocumentNode.SelectSingleNode("//body") ?? doc.DocumentNode;
                 var htmlFragment = body.InnerHtml;
-                var markdown = converter.Convert(htmlFragment);
+                string markdown = "";
+                try
+                {
+                    markdown = converter.Convert(htmlFragment);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "ReverseMarkdown converter failed for {Uri}", uri);
+                }
 
                 // If conversion produced no output or looks like raw HTML (converter failed or returned HTML), fall back to a simple converter
                 if (string.IsNullOrWhiteSpace(markdown) || Regex.IsMatch(markdown, "<\\/?[a-zA-Z]"))
                 {
                     _log.Add("ReverseMarkdown output appears invalid or empty. Using fallback converter.");
                     progress?.Report("Using fallback markdown converter");
+                    _logger.LogDebug("Using fallback converter for {Uri}", uri);
                     try
                     {
                         var fallback = ConvertHtmlToMarkdown(htmlFragment);
@@ -453,6 +680,40 @@ public class WebGrabService : IWebGrabService
                     catch (Exception ex)
                     {
                         _log.Add($"Fallback converter failed: {ex.Message}");
+                        _logger.LogWarning(ex, "Fallback converter failed for {Uri}", uri);
+                    }
+                }
+
+                // Post-process markdown to remove duplicate adjacent image entries that refer to the same src.
+                // run replacements until stable.
+                if (!string.IsNullOrWhiteSpace(markdown))
+                {
+                    var changed = true;
+                    while (changed)
+                    {
+                        var before = markdown;
+
+                        // plain then linked -> keep plain
+                        markdown = Regex.Replace(markdown,
+                            @"(?<first>!\[[^\]]*\]\((?<src>[^)]+)\))\s*(?<second>\[!\[[^\]]*\]\(\k<src>\)\]\([^)]+\))",
+                            "${first}", RegexOptions.IgnoreCase);
+
+                        // linked then plain -> keep plain
+                        markdown = Regex.Replace(markdown,
+                            @"(?<first>\[!\[[^\]]*\]\((?<src>[^)]+)\)\]\([^)]+\))\s*(?<second>!\[[^\]]*\]\(\k<src>\))",
+                            "${second}", RegexOptions.IgnoreCase);
+
+                        // plain then plain -> keep first
+                        markdown = Regex.Replace(markdown,
+                            @"(?<first>!\[[^\]]*\]\((?<src>[^)]+)\))\s*(?<second>!\[[^\]]*\]\(\k<src>\))",
+                            "${first}", RegexOptions.IgnoreCase);
+
+                        // linked then linked -> keep first
+                        markdown = Regex.Replace(markdown,
+                            @"(?<first>\[!\[[^\]]*\]\((?<src>[^)]+)\)\]\([^)]+\))\s*(?<second>\[!\[[^\]]*\]\(\k<src>\)\]\([^)]+\))",
+                            "${first}", RegexOptions.IgnoreCase);
+
+                        changed = !string.Equals(before, markdown, StringComparison.Ordinal);
                     }
                 }
 
@@ -460,19 +721,23 @@ public class WebGrabService : IWebGrabService
                 await File.WriteAllTextAsync(fileNameForPage, markdown, cancellationToken);
                 _log.Add($"Saved page: {uri} -> {fileNameForPage}");
                 progress?.Report($"Saved page: {uri}");
+                _logger.LogInformation("Saved page {Uri} -> {File}", uri, fileNameForPage);
             }
             catch (OperationCanceledException)
             {
                 _log.Add("Operation cancelled");
+                _logger.LogInformation("Operation cancelled while processing pages");
                 return new WebGrabResult(false, "Cancelled", _log);
             }
             catch (Exception ex)
             {
                 _log.Add($"Error visiting {uri}: {ex.Message}");
                 progress?.Report($"Error visiting {uri}: {ex.Message}");
+                _logger.LogError(ex, "Error visiting {Uri}", uri);
             }
         }
 
+        _logger.LogInformation("Grab completed. Pages processed: {Count}", _visited.Count);
         return new WebGrabResult(true, "Completed", _log);
     }
 
